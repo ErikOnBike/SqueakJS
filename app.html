@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <script type="module" src="app.js"></script>
+<!--
+  <script type="module" src="squeak_headless_bundle.js"></script>
+-->
+  <script>
+    // Set application identifier
+    let appNameFromUrl = document.location.search.slice(1);
+    let appNameFromSession = window.sessionStorage.getItem("APP");
+    if(appNameFromUrl !== appNameFromSession) {
+      if(appNameFromSession) {
+        // End previous session by removing the session id
+        window.sessionStorage.removeItem("CLIENT_ID");
+      }
+      window.sessionStorage.setItem("APP", appNameFromUrl);
+    }
+
+    // Set server location
+    window.sessionStorage.setItem("SERVER_URL", document.location.protocol.replace("http", "ws") + "//" + document.location.host + "/io");
+
+    // Set OS/platform identifier
+    let platform = navigator.platform;
+    window.sessionStorage.setItem("OS",
+      platform.indexOf("Mac") >= 0 ? "macos" :
+      platform.indexOf("Win") >= 0 ? "windows" :
+      platform.indexOf("Linux") >= 0 ? "linux" :
+      "unknown");
+
+    // Load and start image if this page and its scripts are loaded
+    window.addEventListener("load", function() {
+
+      // Add file interface
+      self.Squeak.flushAllFiles = function() {};
+      self.Squeak.filePut = function(name, buffer) {
+        let blob = new Blob([buffer]);
+        let link = document.createElement("a");
+        let url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "client-environment.image");
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+      self.Squeak.fetchImageAndRun("client-environment.image", { ignoreQuit: false });
+    });
+  </script>
+</head>
+<body></body>
+</html>

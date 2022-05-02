@@ -1,3 +1,6 @@
 node_modules/
 gh-pages
 dist/*.min.js*
+client-environment.image
+squeak_headless_bundle.js
+*.swp
