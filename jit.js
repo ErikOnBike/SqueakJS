@@ -334,6 +334,7 @@ to single-step.
                     case 2: this.generatePush("lit[", 1 + (byte2 & 0x3F), "]"); return;
                     case 3: this.generatePush("lit[", 1 + (byte2 & 0x3F), "].pointers[1]"); return;
                 }
+                return;
             // extended store
             case 0x81:
                 byte2 = this.method.bytes[this.pc++];
@@ -353,6 +354,7 @@ to single-step.
                     case 2: throw Error("illegal pop into literal");
                     case 3: this.generatePopInto("lit[", 1 + (byte2 & 0x3F), "].pointers[1]"); return;
                 }
+                return;
             // Single extended send
             case 0x83:
                 byte2 = this.method.bytes[this.pc++];
@@ -372,6 +374,7 @@ to single-step.
                     case 6: this.generatePopInto("inst[", byte3, "]"); return;
                     case 7: this.generateStoreInto("lit[", 1 + byte3, "].pointers[1]"); return;
                 }
+                return;
             // Single extended send to super
             case 0x85:
                 byte2 = this.method.bytes[this.pc++];

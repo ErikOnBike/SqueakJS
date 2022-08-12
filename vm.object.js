@@ -216,8 +216,8 @@ Object.subclass('Squeak.Object',
         return swapped.getFloat64(0, true);
     },
     fillArray: function(length, filler) {
-        for (var array = [], i = 0; i < length; i++)
-            array[i] = filler;
+        var array = new Array(length);
+        array.fill(filler);
         return array;
     },
 },

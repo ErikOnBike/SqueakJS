@@ -130,8 +130,14 @@ function CpDOMPlugin() {
     // Helper method to create a tag name from a class name
     tagNameFromClass: function(aClass) {
 
+      // Special case
+      var className = aClass.className();
+      if(className === "CpView") {
+        return "cp-view";
+      }
+
       // Remove camelCase and use dashes, all lowercase
-      return aClass.className()
+      return className
         .replace(/View$/, "")                 // Remove View as postfix for nicer readability
         .replace(/([a-z])([A-Z])/g, "$1-$2")
         .replace(/([A-Z])([A-Z][a-z])/g, "$1-$2")
@@ -847,10 +853,10 @@ function CpDOMPlugin() {
     },
     handleEvents: function() {
       if(this.eventHandlerProcess && this.eventsReceived.length > 0) {
-var start = null;
-if(window.sessionStorage.getItem("DEBUG")) start = performance.now();
+//var start = null;
+//if(window.sessionStorage.getItem("DEBUG")) start = performance.now();
         this.runUninterrupted(this.eventHandlerProcess);
-if(start !== null) console.log("Event handler took " + (performance.now() - start) + "ms");
+//if(start !== null) console.log("Event handler took " + (performance.now() - start) + "ms");
       }
     },
 
@@ -868,7 +874,12 @@ if(start !== null) console.log("Event handler took " + (performance.now() - star
       eventDefinition.instVarNames.forEach(function(instVarName, index) {
         let value = eventObject.specials[instVarName];
         if(value === undefined) {
-          value = event[instVarName];
+          // Temporary fix for perfomance
+          if((instVarName === 'offsetX' || instVarName === 'offsetY') && event.buttons !== 1) {
+            value = 0;
+          } else {
+            value = event[instVarName];
+          }
         }
         if(value !== undefined && value !== null) {
           newEvent.pointers[index] = primHandler.makeStObject(value);

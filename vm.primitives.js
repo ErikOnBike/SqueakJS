@@ -451,13 +451,24 @@ Object.subclass('Squeak.Primitives',
         return this.success;
     },
     doNamedPrimitive: function(argCount, primMethod) {
-        if (primMethod.pointersSize() < 2) return false;
-        var firstLiteral = primMethod.pointers[1]; // skip method header
-        if (firstLiteral.pointersSize() !== 4) return false;
-        this.primMethod = primMethod;
-        var moduleName = firstLiteral.pointers[0].bytesAsString();
-        var functionName = firstLiteral.pointers[1].bytesAsString();
-        return this.namedPrimitive(moduleName, functionName, argCount);
+        if (!primMethod.primFunction) {
+            if (primMethod.pointersSize() < 2) return false;
+            var firstLiteral = primMethod.pointers[1]; // skip method header
+            if (firstLiteral.pointersSize() !== 4) return false;
+            this.primMethod = primMethod;
+            var moduleName = firstLiteral.pointers[0].bytesAsString();
+            var functionName = firstLiteral.pointers[1].bytesAsString();
+            primMethod.primFunction = this.loadFunctionFrom(functionName, moduleName);
+            if (!primMethod.primFunction) return false;
+        }
+        this.interpreterProxy.argCount = argCount;
+        var sp = this.vm.sp;
+        var result = primMethod.primFunction(argCount);
+        if ((result === true || (result !== false && this.success)) && this.vm.sp !== sp - argCount && !this.vm.frozen) {
+            this.vm.warnOnce("stack unbalanced after primitive " + modName + "." + functionName, "error");
+        }
+        if (result === true || result === false) return result;
+        return this.success;
     },
     fakePrimitive: function(prim, retVal, argCount) {
         // fake a named primitive
