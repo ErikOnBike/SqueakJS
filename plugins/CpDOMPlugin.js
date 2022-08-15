@@ -853,10 +853,10 @@ function CpDOMPlugin() {
     },
     handleEvents: function() {
       if(this.eventHandlerProcess && this.eventsReceived.length > 0) {
-//var start = null;
-//if(window.sessionStorage.getItem("DEBUG")) start = performance.now();
+var start = null;
+if(window.sessionStorage.getItem("DEBUG")) start = performance.now();
         this.runUninterrupted(this.eventHandlerProcess);
-//if(start !== null) console.log("Event handler took " + (performance.now() - start) + "ms");
+if(start !== null) console.log("Event handler took " + (performance.now() - start) + "ms");
       }
     },
 
@@ -989,7 +989,8 @@ function CpDOMPlugin() {
             (event.ctrlKey ? 2 : 0) +
             (event.metaKey ? 4 : 0) +
             (event.shiftKey ? 8 : 0),
-          // Fix 'issue' with click event because 'buttons' are not registered
+          // Fix 'issue' with click event because 'buttons' are not registered on Firefox
+          // See https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons#firefox_notes
           buttons: (event.type === "click" && event.detail > 0 ? ([ 1, 4, 2, 8, 16 ][event.button] || 1) : event.buttons),
           target: this.findTarget(event),
           elements: this.findInterestedElements(event),
