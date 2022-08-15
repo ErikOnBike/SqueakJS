@@ -102,8 +102,8 @@ function CpDOMPlugin() {
         return self.makeStAssociation(key, obj[key]);
       });
       // Assume instVars are #tally and #array (in that order)
-      var tally = dictionary.pointers[0] = keys.length;
-      var array = dictionary.pointers[1] = this.primHandler.makeStArray(associations);
+      dictionary.pointers[0] = keys.length;
+      dictionary.pointers[1] = this.primHandler.makeStArray(associations);
       return dictionary;
     },
 
