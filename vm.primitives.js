@@ -466,7 +466,10 @@ Object.subclass('Squeak.Primitives',
         var sp = this.vm.sp;
         var result = primMethod.primFunction(argCount);
         if ((result === true || (result !== false && this.success)) && this.vm.sp !== sp - argCount && !this.vm.frozen) {
-            this.vm.warnOnce("stack unbalanced after primitive " + modName + "." + functionName, "error");
+            var firstLiteral = primMethod.pointers[1]; // skip method header
+            var moduleName = firstLiteral.pointers[0].bytesAsString();
+            var functionName = firstLiteral.pointers[1].bytesAsString();
+            this.vm.warnOnce("stack unbalanced after primitive " + moduleName + "." + functionName, "error");
         }
         if (result === true || result === false) return result;
         return this.success;
