@@ -8,10 +8,9 @@ function CpDOMPlugin() {
     customTagMap: {},
     nestedTags: {},
     customElementClassMappers: [],
-    eventDefinitions: {},
+    eventClassMap: {},
     eventsReceived: [],
-    throttleEventTypes: [ "pointermove", "wheel", "gesturechange" ],
-    preventDefaultEventTypes: [ "wheel" ],	// These need be applied on element level (vs only on body as in preventDefaultEventHandling)
+    throttleEventTypes: [ "pointermove", "touchmove", "wheel", "gesturechange" ],
     namespaces: [
       // Default namespaces (for attributes, therefore without elementClass)
       { prefix: "xlink", uri: "http://www.w3.org/1999/xlink", elementClass: null },
@@ -29,7 +28,6 @@ function CpDOMPlugin() {
       this.domRectangleClass = null; // Only known after installation
       this.systemPlugin = Squeak.externalModules.CpSystemPlugin;
       this.updateMakeStObject();
-      this.preventDefaultEventHandling();
       this.runUpdateProcess();
       return true;
     },
@@ -54,6 +52,12 @@ function CpDOMPlugin() {
           vm.interpretOne();
         }
       } while(process === scheduler.pointers[Squeak.ProcSched_activeProcess] && (endTime === undefined || performance.now() < endTime));
+
+      // If process did not finish in time, put it to sleep
+      if(process === scheduler.pointers[Squeak.ProcSched_activeProcess]) {
+console.warn("Process put to sleep because it did not finish in time: " + (process === this.transitionProcess ? "transition" : process === this.eventHandlerProcess ? "process" : "unknown"));
+        primHandler.putToSleep(process);
+      }
     },
 
     // Helper methods for answering (and setting the stack correctly)
@@ -69,14 +73,14 @@ function CpDOMPlugin() {
     updateMakeStObject: function() {
       // Replace existing makeStObject function with more elaborate variant
       if(this.originalMakeStObject) {
-        return;	// Already installed
+        return; // Already installed
       }
       var self = this;
       self.originalMakeStObject = this.primHandler.makeStObject;
       this.primHandler.makeStObject = function(obj, proxyClass) {
         if(obj !== undefined && obj !== null) {
           // Check for DOM element
-          if(obj.tagName && obj.querySelectorAll) {
+          if(obj.querySelectorAll) {
             return self.instanceForElement(obj);
           }
           // Check for Dictionary like element
@@ -245,8 +249,7 @@ function CpDOMPlugin() {
     },
     "primitiveDomElementDocument": function(argCount) {
       if(argCount !== 0) return false;
-      var document = window.document;
-      return this.answer(argCount, this.instanceForElement(document));
+      return this.answer(argCount, this.instanceForElement(window.document));
     },
     "primitiveDomElementElementsFromPoint:": function(argCount) {
       if(argCount !== 1) return false;
@@ -586,12 +589,18 @@ function CpDOMPlugin() {
       domElement.removeChild(childElement);
       return this.answer(argCount, childInstance);
     },
-    "primitiveDomElementUnRegisterAllInterest": function(argCount) {
+    "primitiveDomElementUnregisterAllInterest": function(argCount) {
       if(argCount !== 0) return false;
       var domElement = this.interpreterProxy.stackValue(argCount).domElement;
       if(!domElement) return false;
-      delete domElement.__cp_events;
-      delete domElement.__cp_element;
+      if(domElement.__cp_event_listeners) {
+        domElement.__cp_event_listeners.forEach(function(eventListeners, eventClass) {
+          eventListeners.forEach(function(eventListener) {
+            domElement.removeEventListener(eventClass.type, eventListener);
+          });
+        });
+        delete domElement.__cp_event_listeners;
+      }
       return this.answerSelf(argCount);
     },
     "primitiveDomElementApply:withArguments:": function(argCount) {
@@ -665,6 +674,43 @@ function CpDOMPlugin() {
       var domElement = this.interpreterProxy.stackValue(argCount).domElement;
       if(!domElement) return false;
       return this.answer(argCount, this.instanceForElement(domElement.shadowRoot));
+    },
+
+    // WebComponent instance methods
+    "primitiveWebComponentTextContent": function(argCount) {
+      if(argCount !== 0) return false;
+      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      if(!domElement) return false;
+
+      // Extract text nodes from myself and all children (not being slotted elements)
+      var text = "";
+      var child = domElement.firstChild;
+      while(child) {
+        if((child.nodeType === 1 && !child.slot) || child.nodeType === 3) {
+          text += child.textContent;
+        }
+        child = child.nextSibling;
+      }
+      return this.answer(argCount, text);
+    },
+    "primitiveWebComponentTextContent:": function(argCount) {
+      if(argCount !== 1) return false;
+      var textContent = this.interpreterProxy.stackValue(0).asString();
+      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      if(!domElement) return false;
+
+      // Remove any existing content (not being slotted elements)
+      // and then add a new text node.
+      var child = domElement.firstChild;
+      while(child) {
+        var nextChild = child.nextSibling;
+        if(!(child.nodeType === 1 && child.slot)) {
+          child.parentNode.removeChild(child);
+        }
+        child = nextChild;
+      }
+      domElement.appendChild(window.document.createTextNode(textContent));
+      return this.answerSelf(argCount);
     },
 
     // TemplateComponent helper methods
@@ -860,167 +906,6 @@ if(start !== null) console.log("Event handler took " + (performance.now() - star
       }
     },
 
-    // Event handling
-    makeStEvent: function(eventObject) {
-
-      // Create new instance and connect original event
-      let event = eventObject.event;
-      let eventDefinition = this.eventDefinitions[event.type];
-      let newEvent = this.interpreterProxy.vm.instantiateClass(eventDefinition.eventClass, 0);
-      newEvent.event = event;
-
-      // Set event properties
-      let primHandler = this.primHandler;
-      eventDefinition.instVarNames.forEach(function(instVarName, index) {
-        let value = eventObject.specials[instVarName];
-        if(value === undefined) {
-          // Temporary fix for perfomance
-          if((instVarName === 'offsetX' || instVarName === 'offsetY') && event.buttons !== 1) {
-            value = 0;
-          } else {
-            value = event[instVarName];
-          }
-        }
-        if(value !== undefined && value !== null) {
-          newEvent.pointers[index] = primHandler.makeStObject(value);
-        }
-      });
-
-      return newEvent;
-    },
-    preventDefaultEventHandling: function() {
-      let body = window.document.body;
-
-      // Prevent default behavior for number of events
-      [
-        "contextmenu",
-        "dragstart"	// Prevent Firefox (and maybe other browsers) from doing native drag/drop
-      ].forEach(function(touchType) {
-        body.addEventListener(
-          touchType,
-          function(event) {
-            event.preventDefault();
-          }
-        );
-      });
-    },
-    findInterestedElements: function(event) {
-      let type = event.type;
-      let elements = [];
-
-      // Start searching for elements using composedPath because of shadow DOM
-      let composedPath = (event.composedPath && event.composedPath()) || [];
-      if(composedPath.length > 0) {
-        let index = 0;
-        let node = composedPath[index];
-        while(node) {
-
-          // Keep first element which is interested
-          if(node.__cp_events && node.__cp_events.has(type)) {
-            elements.push(node);
-          }
-          node = composedPath[++index];
-        }
-      } else {
-        let node = event.target;
-        while(node) {
-
-          // Keep first element which is interested
-          if(node.__cp_events && node.__cp_events.has(type)) {
-            elements.push(node);
-          }
-          node = node.parentElement;
-        }
-      }
-
-      // For mouse events, add elements which are beneath the current pointer.
-      // Browsers don't do this by default. When an HTML element is directly
-      // under the pointer, only this element and its predecessors are taken
-      // into account. If HTML elements overlap because of positioning/placement
-      // the elements beneath the top elements are out of luck. Let's show some
-      // love and add them to the party of interested elements.
-      // Check for MouseEvent using duck-typing (do NOT use pageX and pageY here
-      // since some browsers still have these properties on UIEvent, see
-      // https://docs.w3cub.com/dom/uievent/pagex).
-      if(event.offsetX !== undefined && event.offsetY !== undefined) {
-        document.elementsFromPoint(event.pageX, event.pageY).forEach(function(element) {
-          if(element.__cp_events && element.__cp_events.has(type) && !elements.includes(element)) {
-            // Find correct position within structure (leaf elements first, root element last).
-            // Find common element (towards leafs and put new element directly after it).
-            let commonElement = element.parentElement;
-            let index = -1;
-            while(commonElement && index < 0) {
-              index = elements.indexOf(commonElement);
-              commonElement = commonElement.parentElement;
-            }
-            if(index < 0) {
-              elements.push(element);
-            } else {
-              elements.splice(index, 0, element);
-            }
-          }
-        });
-      }
-
-      var thisHandle = this;
-      return elements.map(function(element) { return thisHandle.instanceForElement(element); });
-    },
-    findTarget: function(event) {
-
-      // Start searching for target using composedPath because of shadow DOM
-      let composedPath = (event.composedPath && event.composedPath()) || [];
-      if(composedPath.length > 0) {
-        return this.instanceForElement(composedPath[0]);
-      } else {
-        return this.instanceForElement(event.target);
-      }
-      return null;
-    },
-    addEvent: function(event) {
-
-      // Add event object with a few special properties.
-      // The modifiers property is added as a convenience to access all
-      // modifiers through a single value.
-      let eventObject = {
-        event: event,
-        specials: {
-          modifiers:
-            (event.altKey ? 1 : 0) +
-            (event.ctrlKey ? 2 : 0) +
-            (event.metaKey ? 4 : 0) +
-            (event.shiftKey ? 8 : 0),
-          // Fix 'issue' with click event because 'buttons' are not registered on Firefox
-          // See https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons#firefox_notes
-          buttons: (event.type === "click" && event.detail > 0 ? ([ 1, 4, 2, 8, 16 ][event.button] || 1) : event.buttons),
-          target: this.findTarget(event),
-          elements: this.findInterestedElements(event),
-          currentElementIndex: 1
-        }
-      };
-
-      // Add or replace last event (if same type replace events as throttling mechanism)
-      let type = event.type;
-      if(this.eventsReceived.length > 0 && this.eventsReceived[this.eventsReceived.length - 1].event.type === type && this.throttleEventTypes.includes(type)) {
-        this.eventsReceived[this.eventsReceived.length - 1] = eventObject;
-      } else {
-        this.eventsReceived.push(eventObject);
-      }
-    },
-    handleEvent: function(event) {
-
-      // Prevent the event from propagation (bubbling in this case).
-      // This will be handled in the Smalltalk code itself.
-      event.stopImmediatePropagation();
-
-      // Add the event to the collection of events to handlee
-      this.addEvent(event);
-
-      // Directly handle the available events
-      if(!this.throttleEventTypes.includes(event.type)) {
-        this.handleEvents();
-      }
-    },
-
     // Event class methods
     "primitiveEventRegisterProcess:": function(argCount) {
       if(argCount !== 1) return false;
@@ -1032,10 +917,7 @@ if(start !== null) console.log("Event handler took " + (performance.now() - star
       let type = this.interpreterProxy.stackValue(0).asString();
       let eventClass = this.interpreterProxy.stackValue(1);
       eventClass.type = type;
-      this.eventDefinitions[type] = {
-        eventClass: eventClass,
-        instVarNames: eventClass.allInstVarNames()
-      };
+      this.eventClassMap[type] = eventClass;
       return this.answerSelf(argCount);
     },
     "primitiveEventAddListenerTo:": function(argCount) {
@@ -1044,19 +926,80 @@ if(start !== null) console.log("Event handler took " + (performance.now() - star
       var element = this.interpreterProxy.stackValue(0);
       var domElement = element.domElement;
       if(!domElement) return false;
-      var eventName = receiver.type;
-      if(!domElement.__cp_events) {
-        domElement.__cp_events = new Set();
-      }
-      domElement.__cp_events.add(eventName);
-      domElement.__cp_element = element;
+      domElement.__cp_element = element; // Quick accessor for handling events quicker
+
+      // Create the actual event listener
       var thisHandle = this;
-      domElement.addEventListener(eventName, function(event) {
-        if(thisHandle.preventDefaultEventTypes.includes(event.type)) {
-          event.preventDefault();
+      var eventListener = function(event) {
+        var type = event.type;
+        var currentTarget = event.currentTarget;
+
+        // Validate an event is not sent twice to same element
+        // (otherwise will results in duplicates in Smalltalk code)
+        if(event.__cp_current_target === currentTarget) {
+          // Stop here. No need to announce multiple times on same target.
+          // The Announcer in the Smalltalk code has registered multiple
+          // listeners already. So it will already perform all announcements.
+          return;
         }
-        thisHandle.handleEvent(event);
-      });
+        event.__cp_current_target = currentTarget;
+
+        // Add or replace last event (if 'same' event, replace it as throttling mechanism)
+        var shouldThrottle = thisHandle.throttleEventTypes.includes(type);
+        var eventsReceived = thisHandle.eventsReceived;
+        if(shouldThrottle) {
+          // Check the current target using the 'backup' value,
+          // because in a throttled event the actual value has become null.
+          var eventIndex = eventsReceived.findIndex(function(each) { return each.type === type && each.__cp_current_target === currentTarget; });
+          if(eventIndex >= 0) {
+            eventsReceived[eventIndex] = event;
+          } else {
+            eventsReceived.push(event);
+          }
+        } else {
+          eventsReceived.push(event);
+        }
+
+        // Directly handle the available events (if not throttling)
+        if(!shouldThrottle) {
+          thisHandle.handleEvents();
+        }
+      };
+
+      // Add the new event listener to the DOM element (to allow later removal)
+      if(!domElement.__cp_event_listeners) {
+        domElement.__cp_event_listeners = new Map();
+        domElement.__cp_event_listeners.set(receiver, [ eventListener ]);
+      } else {
+        var eventListeners = domElement.__cp_event_listeners.get(receiver);
+        if(eventListeners) {
+          eventListeners.push(eventListener);
+        } else {
+          domElement.__cp_event_listeners.set(receiver, [ eventListener ]);
+        }
+      }
+
+      // Finally add event listener to DOM element
+      domElement.addEventListener(receiver.type, eventListener);
+      return this.answerSelf(argCount);
+    },
+    "primitiveEventRemoveListenerFrom:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var element = this.interpreterProxy.stackValue(0);
+      var domElement = element.domElement;
+      if(!domElement) return false;
+
+      // Retrieve matching event listener
+      if(domElement.__cp_event_listeners) {
+        var eventListeners = domElement.__cp_event_listeners.get(receiver);
+        if(eventListeners) {
+          // Remove last element (they are all the 'same') and ignore if not present
+          var eventListener = eventListeners.pop();
+          domElement.removeEventListener(receiver.type, eventListener);
+console.log("Removed listener " + receiver.type + " from " + domElement.localName + " " + (domElement.id || ""));
+        }
+      }
       return this.answerSelf(argCount);
     },
     "primitiveEventIsListenedToOn:": function(argCount) {
@@ -1065,8 +1008,7 @@ if(start !== null) console.log("Event handler took " + (performance.now() - star
       var element = this.interpreterProxy.stackValue(0);
       var domElement = element.domElement;
       if(!domElement) return false;
-      var eventName = receiver.type;
-      return this.answer(argCount, !!(domElement.__cp_events && domElement.__cp_events.has(eventName)));
+      return this.answer(argCount, !!(domElement.__cp_event_listeners && domElement.__cp_event_listeners.has(receiver)));
     },
     "primitiveEventLatestEvents": function(argCount) {
       if(argCount !== 0) return false;
@@ -1075,7 +1017,18 @@ if(start !== null) console.log("Event handler took " + (performance.now() - star
       var thisHandle = this;
       var result = this.primHandler.makeStArray(this.eventsReceived
         .map(function(event) {
-          return thisHandle.makeStEvent(event);
+
+          // Answer pre-created event if present (when bubbling or for custom events)
+          if(event.__cp_event) {
+            return event.__cp_event;
+          }
+
+          // Create new instance and connect original event
+          let eventClass = thisHandle.eventClassMap[event.type];
+          let newEvent = thisHandle.interpreterProxy.vm.instantiateClass(eventClass, 0);
+          newEvent.event = event;
+          event.__cp_event = newEvent;
+          return newEvent;
         })
       );
       this.eventsReceived = [];
@@ -1084,13 +1037,97 @@ if(start !== null) console.log("Event handler took " + (performance.now() - star
     },
 
     // Event instance methods
+    "primitiveEventPropertyAt:": function(argCount) {
+      if(argCount !== 1) return false;
+      var propertyName = this.interpreterProxy.stackValue(0).asString();
+      if(!propertyName) return false;
+      var event = this.interpreterProxy.stackValue(argCount).event;
+      if(!event) return false;
+      var propertyValue = event[propertyName];
+      if(!propertyValue && propertyName === "currentTarget") {
+        // Check the current target using the 'backup' value,
+        // because in a throttled event the actual value has become null.
+        propertyValue = event.__cp_current_target;
+      }
+      return this.answer(argCount, propertyValue);
+    },
+    "primitiveEventModifiers": function(argCount) {
+      if(argCount !== 0) return false;
+      var event = this.interpreterProxy.stackValue(argCount).event;
+      if(!event) return false;
+      var modifiers =
+        (event.altKey ? 1 : 0) +
+        (event.ctrlKey ? 2 : 0) +
+        (event.metaKey ? 4 : 0) +
+        (event.shiftKey ? 8 : 0)
+      ;
+      return this.answer(argCount, modifiers);
+    },
     "primitiveEventPreventDefault": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      var event = receiver.event;
-      if(event) {
-        event.preventDefault();
+      var event = this.interpreterProxy.stackValue(argCount).event;
+      if(!event) return false;
+      event.preventDefault();
+      return this.answerSelf(argCount);
+    },
+    "primitiveEventStopPropagation": function(argCount) {
+      if(argCount !== 0) return false;
+      var event = this.interpreterProxy.stackValue(argCount).event;
+      if(!event) return false;
+      // Check the current target using the 'backup' value below,
+      // because in a throttled event the actual value has become null.
+      event.stopPropagation();
+      event.__cp_stop_propagation = true;
+      event.__cp_stop_after = event.__cp_current_target;
+      return this.answerSelf(argCount);
+    },
+    "primitiveEventStopImmediatePropagation": function(argCount) {
+      if(argCount !== 0) return false;
+      var event = this.interpreterProxy.stackValue(argCount).event;
+      if(!event) return false;
+      event.stopImmediatePropagation();
+      event.__cp_stop_propagation = true;
+      event.__cp_stop_after = null;
+      return this.answerSelf(argCount);
+    },
+    "primitiveEventIsStopped": function(argCount) {
+      if(argCount !== 0) return false;
+      var event = this.interpreterProxy.stackValue(argCount).event;
+      if(!event) return false;
+      // Check the current target using the 'backup' value below,
+      // because in a throttled event the actual value has become null.
+      var isStopped = false;
+      if(event.__cp_stop_propagation) {
+        if(event.__cp_stop_after === null) {
+          isStopped = true;
+        } else if(event.__cp_stop_after !== event.__cp_current_target) {
+          event.__cp_stop_after = null;
+          delete event.__cp_current_target;
+          isStopped = true;
+        }
       }
+      return this.answer(argCount, isStopped);
+    },
+
+    // CustomEvent instance methods
+    "primitiveCustomEventCreateWithDetail:": function(argCount) {
+      if(argCount !== 1) return false;
+      var detail = this.systemPlugin.asJavascriptObject(this.interpreterProxy.stackValue(0));
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      if(receiver.event) return false; // Already created!
+      var type = receiver.sqClass.type;
+      receiver.event = new CustomEvent(type, { detail: detail, bubbles: true, cancelable: true, composed: true });
+      receiver.event.__cp_event = receiver;
+      return this.answerSelf(argCount);
+    },
+    "primitiveCustomEventDispatchFrom:": function(argCount) {
+      if(argCount !== 1) return false;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
+      if(!domElement) return false;
+      var event = this.interpreterProxy.stackValue(argCount).event;
+      if(!event) return false;
+      // Dispatch event 'outside' this event handling method (to prevent stack getting out of balance)
+      window.setTimeout(function() { domElement.dispatchEvent(event) }, 0);
       return this.answerSelf(argCount);
     },
 

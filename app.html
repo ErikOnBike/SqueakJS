@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script type="module" src="app.js"></script>
 <!--
   <script type="module" src="squeak_headless_bundle.js"></script>
@@ -16,6 +17,13 @@
         window.sessionStorage.removeItem("CLIENT_ID");
       }
       window.sessionStorage.setItem("APP", appNameFromUrl);
+    }
+
+    // Extract location hash (optional action code)
+    let codeFromUrl = document.location.hash.slice(1);
+    if(codeFromUrl !== "") {
+        window.sessionStorage.setItem("CODE", codeFromUrl);
+        document.location.hash = "";
     }
 
     // Set server location

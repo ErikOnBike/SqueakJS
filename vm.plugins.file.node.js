@@ -301,7 +301,7 @@ Object.extend(Squeak.Primitives.prototype,
         return this.popNIfOK(argCount);	// Answer self
     },
     makeFileHandle: function(filename, fd, writeFlag) {
-        var handle = this.makeStString("squeakjs:" + filename);
+        var handle = this.makeStString(filename);
         handle.fd = fd;                 // shared between handles
         handle.fileWrite = writeFlag;   // specific to this handle
         handle.filePos = 0;             // specific to this handle

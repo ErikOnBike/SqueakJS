@@ -61,7 +61,7 @@ function runImage(imageData, imageName, options) {
                     // Ignore display.quitFlag when requested.
                     // Some Smalltalk images quit when no display is found.
                     if(options.ignoreQuit || !display.quitFlag) {
-                        setTimeout(run, ms === "sleep" ? 10 : ms);
+                        setTimeout(run, ms === "sleep" ? 200 : ms);
                     }
                 });
             } catch(e) {

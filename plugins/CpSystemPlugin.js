@@ -104,6 +104,26 @@ function CpSystemPlugin() {
       return result;
     },
 
+    // Object instance methods
+    "primitiveObjectCrTrace:": function(argCount) {
+      if(argCount !== 1) return false;
+      var message = this.interpreterProxy.stackValue(0).asString();
+      console.log((new Date()).toISOString() + " " + message);
+      return this.answerSelf(argCount);
+    },
+    "primitiveObjectCrWarn:": function(argCount) {
+      if(argCount !== 1) return false;
+      var message = this.interpreterProxy.stackValue(0).asString();
+      console.warn((new Date()).toISOString() + " " + message);
+      return this.answerSelf(argCount);
+    },
+    "primitiveObjectCrError:": function(argCount) {
+      if(argCount !== 1) return false;
+      var message = this.interpreterProxy.stackValue(0).asString();
+      console.error((new Date()).toISOString() + " " + message);
+      return this.answerSelf(argCount);
+    },
+
     // Symbol class methods
     newSymbol: function(string) {
       var newSymbol = this.interpreterProxy.vm.instantiateClass(this.symbolClass, string.length);
@@ -396,7 +416,7 @@ function CpSystemPlugin() {
       if(argCount !== 1) return false;
       var character = this.interpreterProxy.stackValue(0);
       var string = this.interpreterProxy.stackValue(argCount).asString();
-      return this.answer(argCount, character.sqClass === this.characterClass ? string.indexOf(String.fromCodePoint(character.hash)) + 1 : 0); 
+      return this.answer(argCount, character.sqClass === this.characterClass ? string.indexOf(String.fromCodePoint(character.hash)) + 1 : 0);
     },
     "primitiveStringIncludesSubstring:": function(argCount) {
       if(argCount !== 1) return false;
@@ -566,7 +586,7 @@ function CpSystemPlugin() {
 
       // Get next receive buffer
       var receiveBuffer = webSocketHandle.buffers.splice(0, 1)[0];  // Remove first element and keep it
-      var result = receiveBuffer ? this.primHandler.makeStByteArray(receiveBuffer) : this.interpreterProxy.nilObject(); 
+      var result = receiveBuffer ? this.primHandler.makeStByteArray(receiveBuffer) : this.interpreterProxy.nilObject();
 
       // Answer ByteArray or nil
       return this.answer(argCount, result);
@@ -596,7 +616,7 @@ function CpSystemPlugin() {
       var receiver = this.interpreterProxy.stackValue(argCount);
       var webSocketHandle = receiver.webSocketHandle;
       if(!webSocketHandle) return false;
- 
+
       // Get ready state
       var readyState = webSocketHandle.webSocket.readyState;
 
