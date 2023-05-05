@@ -899,10 +899,10 @@ console.warn("Process put to sleep because it did not finish in time: " + (proce
     },
     handleEvents: function() {
       if(this.eventHandlerProcess && this.eventsReceived.length > 0) {
-var start = null;
-if(window.sessionStorage.getItem("DEBUG")) start = performance.now();
+//var start = null;
+//if(window.sessionStorage.getItem("DEBUG")) start = performance.now();
         this.runUninterrupted(this.eventHandlerProcess);
-if(start !== null) console.log("Event handler took " + (performance.now() - start) + "ms");
+//if(start !== null) console.log("Event handler took " + (performance.now() - start) + "ms");
       }
     },
 
@@ -997,7 +997,6 @@ if(start !== null) console.log("Event handler took " + (performance.now() - star
           // Remove last element (they are all the 'same') and ignore if not present
           var eventListener = eventListeners.pop();
           domElement.removeEventListener(receiver.type, eventListener);
-console.log("Removed listener " + receiver.type + " from " + domElement.localName + " " + (domElement.id || ""));
         }
       }
       return this.answerSelf(argCount);
