@@ -110,8 +110,8 @@ if (!Function.prototype.subclass) {
 Object.extend(Squeak,
 "version", {
     // system attributes
-    vmVersion: "SqueakJS 1.0.3",
-    vmDate: "2021-03-21",               // Maybe replace at build time?
+    vmVersion: "SqueakJS 1.0.5",
+    vmDate: "2022-11-19",               // Maybe replace at build time?
     vmBuild: "unknown",                 // or replace at runtime by last-modified?
     vmPath: "unknown",                  // Replace at runtime
     vmFile: "vm.js",
@@ -459,14 +459,6 @@ Object.subclass('Squeak.Object',
             //These words are actually a Float
             this.isFloat = true;
             this.float = this.decodeFloat(bits, littleEndian, nativeFloats);
-            if (this.float == 1.3797216632888e-310) {
-                if (Squeak.noFloatDecodeWorkaround) ; else {
-                    this.constructor.prototype.decodeFloat = this.decodeFloatDeoptimized;
-                    this.float = this.decodeFloat(bits, littleEndian, nativeFloats);
-                    if (this.float == 1.3797216632888e-310)
-                        throw Error("Cannot deoptimize decodeFloat");
-                }
-            }
         } else {
             if (nWords > 0)
                 this.words = this.decodeWords(nWords, bits, littleEndian);
@@ -516,23 +508,6 @@ Object.subclass('Squeak.Object',
             swapped = new DataView(buffer);
         swapped.setUint32(0, data.getUint32(4));
         swapped.setUint32(4, data.getUint32(0));
-        return swapped.getFloat64(0, true);
-    },
-    decodeFloatDeoptimized: function(theBits, littleEndian, nativeFloats) {
-        var data = new DataView(theBits.buffer, theBits.byteOffset);
-        // it's either big endian ...
-        if (!littleEndian) return data.getFloat64(0, false);
-        // or real little endian
-        if (nativeFloats) return data.getFloat64(0, true);
-        // or little endian, but with swapped words
-        var buffer = new ArrayBuffer(8),
-            swapped = new DataView(buffer);
-        // wrap in function to defeat Safari's optimizer, which always
-        // answers 1.3797216632888e-310 if called more than 25000 times
-        (function() {
-            swapped.setUint32(0, data.getUint32(4));
-            swapped.setUint32(4, data.getUint32(0));
-        })();
         return swapped.getFloat64(0, true);
     },
     fillArray: function(length, filler) {
@@ -1004,14 +979,6 @@ Squeak.Object.subclass('Squeak.ObjectSpur',
                     //These words are actually a Float
                     this.isFloat = true;
                     this.float = this.decodeFloat(bits, littleEndian, true);
-                    if (this.float == 1.3797216632888e-310) {
-                        if (Squeak.noFloatDecodeWorkaround) ; else {
-                            this.constructor.prototype.decodeFloat = this.decodeFloatDeoptimized;
-                            this.float = this.decodeFloat(bits, littleEndian, true);
-                            if (this.float == 1.3797216632888e-310)
-                                throw Error("Cannot deoptimize decodeFloat");
-                        }
-                    }
                 } else if (nWords > 0) {
                     this.words = this.decodeWords(nWords, bits, littleEndian);
                 }
@@ -1443,7 +1410,8 @@ Object.subclass('Squeak.Image',
 },
 'initializing', {
     initialize: function(name) {
-        this.totalMemory = 100000000;
+        this.headRoom = 32000000; // TODO: pass as option
+        this.totalMemory = 0;
         this.name = name;
         this.gcCount = 0;
         this.gcMilliseconds = 0;
@@ -1489,20 +1457,22 @@ Object.subclass('Squeak.Image',
             }
         };
         // read version and determine endianness
-        var versions = [6501, 6502, 6504, 6505, 6521, 68000, 68002, 68003, 68021],
+        var baseVersions = [6501, 6502, 6504, 68000, 68002, 68004],
+            baseVersionMask = 0x119EE,
             version = 0,
             fileHeaderSize = 0;
         while (true) {  // try all four endianness + header combos
             littleEndian = !littleEndian;
             pos = fileHeaderSize;
             version = readWord();
-            if (versions.indexOf(version) >= 0) break;
+            if (baseVersions.indexOf(version & baseVersionMask) >= 0) break;
             if (!littleEndian) fileHeaderSize += 512;
-            if (fileHeaderSize > 512) throw Error("bad image version");
+            if (fileHeaderSize > 512) throw Error("bad image version"); // we tried all combos
         }        this.version = version;
-        var nativeFloats = [6505, 6521, 68003, 68021].indexOf(version) >= 0;
-        this.hasClosures = [6504, 6505, 6521, 68002, 68003, 68021].indexOf(version) >= 0;
-        this.isSpur = [6521, 68021].indexOf(version) >= 0;
+        var nativeFloats = (version & 1) !== 0;
+        this.hasClosures = !([6501, 6502, 68000].indexOf(version) >= 0);
+        this.isSpur = (version & 16) !== 0;
+        // var multipleByteCodeSetsActive = (version & 256) !== 0; // not used
         var is64Bit = version >= 68000;
         if (is64Bit && !this.isSpur) throw Error("64 bit non-spur images not supported yet");
         if (is64Bit)  { readWord = readWord64; wordSize = 8; }
@@ -1647,6 +1617,8 @@ Object.subclass('Squeak.Image',
             this.lastOldObject = object;
             this.lastOldObject.nextObject = null; // Add next object pointer as indicator this is in fact an old object
         }
+
+        this.totalMemory = this.oldSpaceBytes + this.headRoom;
 
         {
             // For debugging: re-create all objects from named prototypes
@@ -1809,7 +1781,7 @@ Object.subclass('Squeak.Image',
     },
     ensureFullBlockClosureClass: function(splObs, compactClasses) {
         // Read FullBlockClosure class from compactClasses if not yet present in specialObjectsArray.
-        if (splObs.pointers[Squeak.splOb_ClassFullBlockClosure].isNil) {
+        if (splObs.pointers[Squeak.splOb_ClassFullBlockClosure].isNil && compactClasses[38]) {
             splObs.pointers[Squeak.splOb_ClassFullBlockClosure] = compactClasses[38];
         }
     },
@@ -2515,9 +2487,10 @@ Object.subclass('Squeak.Image',
                 var classObj = this.classTable[classID];
                 if (classObj && classObj.pointers) {
                     if (!classObj.hash) throw Error("class without id");
-                    if (classObj.hash !== classID && classID >= 32) {
+                    if (classObj.hash !== classID && classID >= 32 || classObj.oop < 0) {
                         console.warn("freeing class index " + classID + " " + classObj.className());
                         classObj = null;
+                        delete this.classTable[classID];
                     }
                 }
                 if (classObj) data.setUint32(pos, objToOop(classObj), littleEndian);
@@ -5432,7 +5405,7 @@ Object.subclass('Squeak.Primitives',
             case 175: if (this.oldPrims) return this.namedPrimitive('SoundPlugin', 'primitiveSoundPlaySilence', argCount);
                 else return this.popNandPushIfOK(argCount+1, this.behaviorHash(this.stackNonInteger(0)));
             case 176: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primWaveTableSoundmixSampleCountintostartingAtpan', argCount);
-                break;  // fail
+                else return this.popNandPushIfOK(argCount+1, this.vm.image.isSpur ? 0x3FFFFF : 0xFFF); // primitiveMaxIdentityHash
             case 177: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primFMSoundmixSampleCountintostartingAtpan', argCount);
                 return this.popNandPushIfOK(argCount+1, this.allInstancesOf(this.stackNonInteger(0)));
             case 178: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primPluckedSoundmixSampleCountintostartingAtpan', argCount);
@@ -5566,6 +5539,7 @@ Object.subclass('Squeak.Primitives',
             case 575: this.vm.warnOnce("missing primitive: 575 (primitiveHighBit)"); return false;
             // this is not really a primitive, see findSelectorInClass()
             case 576: return this.vm.primitiveInvokeObjectAsMethod(argCount, primMethod);
+            case 578: this.vm.warnOnce("missing primitive: 578 (primitiveSuspendAndBackupPC)"); return false; // see bit 5 of vmParameterAt: 65
         }
         console.error("primitive " + index + " not implemented yet");
         return false;
@@ -6627,7 +6601,7 @@ Object.subclass('Squeak.Primitives',
         block.pointers[Squeak.BlockContext_caller] = this.vm.activeContext;
         this.vm.popN(argCount+1);
         this.vm.newActiveContext(block);
-        if (this.vm.interruptCheckCounter-- <= 0) this.vm.checkForInterrupts(); // jit compile block method
+        if (this.vm.interruptCheckCounter-- <= 0) this.vm.checkForInterrupts();
         return true;
     },
     primitiveBlockValueWithArgs: function(argCount) {
@@ -6646,7 +6620,7 @@ Object.subclass('Squeak.Primitives',
         block.pointers[Squeak.BlockContext_caller] = this.vm.activeContext;
         this.vm.popN(argCount+1);
         this.vm.newActiveContext(block);
-        if (this.vm.interruptCheckCounter-- <= 0) this.vm.checkForInterrupts(); // jit compile block method
+        if (this.vm.interruptCheckCounter-- <= 0) this.vm.checkForInterrupts();
         return true;
     },
     primitiveClosureCopyWithCopiedValues: function(argCount) {
@@ -6658,7 +6632,9 @@ Object.subclass('Squeak.Primitives',
         var blockClosure = this.vm.stackValue(argCount),
             blockArgCount = blockClosure.pointers[Squeak.Closure_numArgs];
         if (argCount !== blockArgCount) return false;
-        return this.activateNewClosureMethod(blockClosure, argCount);
+        this.activateNewClosureMethod(blockClosure, argCount);
+        if (this.vm.interruptCheckCounter-- <= 0) this.vm.checkForInterrupts();
+        return true;
     },
     primitiveClosureValueWithArgs: function(argCount) {
         var array = this.vm.top(),
@@ -6669,16 +6645,25 @@ Object.subclass('Squeak.Primitives',
         this.vm.pop();
         for (var i = 0; i < arraySize; i++)
             this.vm.push(array.pointers[i]);
-        return this.activateNewClosureMethod(blockClosure, arraySize);
+        this.activateNewClosureMethod(blockClosure, arraySize);
+        if (this.vm.interruptCheckCounter-- <= 0) this.vm.checkForInterrupts();
+        return true;
     },
     primitiveClosureValueNoContextSwitch: function(argCount) {
-        return this.primitiveClosureValue(argCount);
+        // An exact clone of primitiveClosureValue except that this version will not check for interrupts
+        var blockClosure = this.vm.stackValue(argCount),
+            blockArgCount = blockClosure.pointers[Squeak.Closure_numArgs];
+        if (argCount !== blockArgCount) return false;
+        this.activateNewClosureMethod(blockClosure, argCount);
+        return true;
     },
     primitiveFullClosureValue: function(argCount) {
         var blockClosure = this.vm.stackValue(argCount),
             blockArgCount = blockClosure.pointers[Squeak.Closure_numArgs];
         if (argCount !== blockArgCount) return false;
-        return this.activateNewFullClosure(blockClosure, argCount);
+        this.activateNewFullClosure(blockClosure, argCount);
+        if (this.vm.interruptCheckCounter-- <= 0) this.vm.checkForInterrupts();
+        return true;
     },
     primitiveFullClosureValueWithArgs: function(argCount) {
         var array = this.vm.top(),
@@ -6689,10 +6674,17 @@ Object.subclass('Squeak.Primitives',
         this.vm.pop();
         for (var i = 0; i < arraySize; i++)
             this.vm.push(array.pointers[i]);
-        return this.activateNewFullClosure(blockClosure, arraySize);
+        this.activateNewFullClosure(blockClosure, arraySize);
+        if (this.vm.interruptCheckCounter-- <= 0) this.vm.checkForInterrupts();
+        return true;
     },
     primitiveFullClosureValueNoContextSwitch: function(argCount) {
-        return this.primitiveFullClosureValue(argCount);
+        // An exact clone of primitiveFullClosureValue except that this version will not check for interrupts
+        var blockClosure = this.vm.stackValue(argCount),
+            blockArgCount = blockClosure.pointers[Squeak.Closure_numArgs];
+        if (argCount !== blockArgCount) return false;
+        this.activateNewFullClosure(blockClosure, argCount);
+        return true;
     },
     activateNewClosureMethod: function(blockClosure, argCount) {
         var outerContext = blockClosure.pointers[Squeak.Closure_outerContext],
@@ -6714,7 +6706,6 @@ Object.subclass('Squeak.Primitives',
         // The initial instructions in the block nil-out remaining temps.
         this.vm.popN(argCount + 1);
         this.vm.newActiveContext(newContext);
-        return true;
     },
     activateNewFullClosure: function(blockClosure, argCount) {
         var closureMethod = blockClosure.pointers[Squeak.ClosureFull_method],
@@ -6735,7 +6726,6 @@ Object.subclass('Squeak.Primitives',
         // No need to nil-out remaining temps as context pointers are nil-initialized.
         this.vm.popN(argCount + 1);
         this.vm.newActiveContext(newContext);
-        return true;
     },
 },
 'scheduling', {
@@ -7105,6 +7095,8 @@ Object.subclass('Squeak.Primitives',
             //             to others at the same priority.
             //      Bit 3: in a muilt-threaded VM, if set, the Window system will only be accessed from the first VM thread
             //      Bit 4: in a Spur vm, if set, causes weaklings and ephemerons to be queued individually for finalization
+            //      Bit 5: if set, implies wheel events will be delivered as such and not mapped to arrow key events
+            //      Bit 6: if set, implies arithmetic primitives will fail if given arguments of different types (float vs int)
             // 49   the size of the external semaphore table (read-write; Cog VMs only)
             // 50-51 reserved for VM parameters that persist in the image (such as eden above)
             // 52   root (remembered) table maximum size (read-only)
@@ -7122,14 +7114,23 @@ Object.subclass('Squeak.Primitives',
             // 64   current number of machine code methods (read-only; Cog VMs only)
             // 65   In newer Cog VMs a set of flags describing VM features,
             //      if non-zero bit 0 implies multiple bytecode set support;
-            //      if non-zero bit 0 implies read-only object support
+            //      if non-zero bit 1 implies read-only object support;
+            //      if non-zero bit 2 implies the VM suffers from using an ITIMER heartbeat (if 0 it has a thread that provides the heartbeat)
+            //      if non-zero bit 3 implies the VM supports cross-platform BIT_IDENTICAL_FLOATING_POINT arithmetic
+            //      if non-zero bit 4 implies the VM can catch exceptions in FFI calls and answer them as primitive failures
+            //      if non-zero bit 5 implies the VM's suspend primitive backs up the process to before the wait if it was waiting on a condition variable
             //      (read-only; Cog VMs only; nil in older Cog VMs, a boolean answering multiple bytecode support in not so old Cog VMs)
             case 65: return 0;
             // 66   the byte size of a stack page in the stack zone  (read-only; Cog VMs only)
             // 67   the maximum allowed size of old space in bytes, 0 implies no internal limit (Spur VMs only).
             // 68 - 69 reserved for more Cog-related info
             // 70   the value of VM_PROXY_MAJOR (the interpreterProxy major version number)
-            // 71   the value of VM_PROXY_MINOR (the interpreterProxy minor version number)"
+            // 71   the value of VM_PROXY_MINOR (the interpreterProxy minor version number)
+            // 72   total milliseconds in full GCs Mark phase since startup (read-only)
+            // 73   total milliseconds in full GCs Sweep phase since startup (read-only, can be 0 depending on compactors)
+            // 74   maximum pause time due to segment allocation
+            // 75   whether arithmetic primitives will do mixed type arithmetic; if false they fail for different receiver and argument types
+            // 76   the minimum unused headroom in all stack pages; Cog VMs only
         }
         return null;
     },
@@ -7138,6 +7139,7 @@ Object.subclass('Squeak.Primitives',
             return this.popNandPushIfOK(1, this.makeStString(this.filenameToSqueak(this.vm.image.name)));
         this.vm.image.name = this.filenameFromSqueak(this.vm.top().bytesAsString());
         Squeak.Settings['squeakImageName'] = this.vm.image.name;
+        this.vm.popN(argCount);
         return true;
     },
     primitiveSnapshot: function(argCount) {
@@ -7377,7 +7379,7 @@ to single-step.
         this.vm = vm;
         this.comments = !!Squeak.Compiler.comments, // generate comments
         // for debug-printing only
-        this.specialSelectors = ['+', '-', '<', '>', '<=', '>=', '=', '~=', '*', '/', '\\', '@',
+        this.specialSelectors = ['+', '-', '<', '>', '<=', '>=', '=', '~=', '*', '/', '\\\\', '@',
             'bitShift:', '//', 'bitAnd:', 'bitOr:', 'at:', 'at:put:', 'size', 'next', 'nextPut:',
             'atEnd', '==', 'class', 'blockCopy:', 'value', 'value:', 'do:', 'new', 'new:', 'x', 'y'];
         this.doitCounter = 0;
