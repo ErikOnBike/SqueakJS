@@ -926,7 +926,7 @@ console.warn("Process put to sleep because it did not finish in time: " + (proce
       var element = this.interpreterProxy.stackValue(0);
       var domElement = element.domElement;
       if(!domElement) return false;
-      domElement.__cp_element = element; // Quick accessor for handling events quicker
+      domElement.__cp_element = element; // Quick accessor for handling events faster
 
       // Create the actual event listener
       var thisHandle = this;
