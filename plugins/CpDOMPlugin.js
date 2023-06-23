@@ -22,8 +22,6 @@ function CpDOMPlugin() {
       this.interpreterProxy = anInterpreter;
       this.primHandler = this.interpreterProxy.vm.primHandler;
       this.pointClass = this.interpreterProxy.vm.globalNamed("Point");
-      this.associationClass = this.interpreterProxy.vm.globalNamed("Association");
-      this.dictionaryClass = this.interpreterProxy.vm.globalNamed("Dictionary");
       this.domElementClass = null; // Only known after installation
       this.domRectangleClass = null; // Only known after installation
       this.systemPlugin = Squeak.externalModules.CpSystemPlugin;
@@ -83,34 +81,11 @@ function CpDOMPlugin() {
           if(obj.querySelectorAll) {
             return self.instanceForElement(obj);
           }
-          // Check for Dictionary like element
-          if(obj.constructor === Object && !obj.sqClass) {
-            return self.makeStDictionary(obj);
-          }
         }
         return self.originalMakeStObject.call(this, obj, proxyClass);
       };
       // Make sure document has a localName
       document.localName = "document";
-    },
-    makeStAssociation: function(key, value) {
-      var association = this.interpreterProxy.vm.instantiateClass(this.associationClass, 0);
-      // Assume instVars are #key and #value (in that order)
-      association.pointers[0] = this.primHandler.makeStObject(key);
-      association.pointers[1] = this.primHandler.makeStObject(value);
-      return association;
-    },
-    makeStDictionary: function(obj) {
-      var dictionary = this.interpreterProxy.vm.instantiateClass(this.dictionaryClass, 0);
-      var keys = Object.keys(obj);
-      var self = this;
-      var associations = keys.map(function(key) {
-        return self.makeStAssociation(key, obj[key]);
-      });
-      // Assume instVars are #tally and #array (in that order)
-      dictionary.pointers[0] = keys.length;
-      dictionary.pointers[1] = this.primHandler.makeStArray(associations);
-      return dictionary;
     },
 
     // Helper methods for namespaces
