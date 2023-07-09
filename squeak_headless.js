@@ -48,6 +48,9 @@ import "./plugins/ConsolePlugin.js";
 // Run image by starting interpreter on it
 function runImage(imageData, imageName, options) {
 
+    // Show build number
+    console.log("Running SqueakJS VM (build " + Squeak.vmBuild + ")");
+
     // Create Squeak image from raw data
     var image = new Squeak.Image(imageName.replace(/\.image$/i, ""));
     image.readFromBuffer(imageData, function startRunning() {

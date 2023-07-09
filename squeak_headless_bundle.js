@@ -115,7 +115,7 @@
         // system attributes
         vmVersion: "SqueakJS 1.0.5",
         vmDate: "2022-11-19",               // Maybe replace at build time?
-        vmBuild: "unknown",                 // or replace at runtime by last-modified?
+        vmBuild: "20230709",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -8411,6 +8411,9 @@
 
     // Run image by starting interpreter on it
     function runImage(imageData, imageName, options) {
+
+        // Show build number
+        console.log("Running SqueakJS VM (build " + Squeak.vmBuild + ")");
 
         // Create Squeak image from raw data
         var image = new Squeak.Image(imageName.replace(/\.image$/i, ""));
