@@ -465,7 +465,7 @@ Object.subclass('Squeak.Object',
             if (name && name.bytes) return name.bytesAsString();
         }
         // must be meta class
-        for (var clsIndex = 5; clsIndex <= 6; clsIndex++) {
+        for (var clsIndex = 3; clsIndex <= 6; clsIndex++) {
             var cls = this.pointers[clsIndex];
             if (cls && cls.pointers) {
                 for (var nameIdx = 6; nameIdx <= 7; nameIdx++) {
