@@ -312,6 +312,14 @@ Object.subclass('Squeak.Image',
         }
         var obj = this.firstOldObject,
             done = 0;
+        // Hack for the tiny image in CodeParadise to keep floats alive.
+        // The tiny image does not have BoxedFloat64 and only a Float
+        // class. When saving/snapshotting an image Float will be deleted
+        // from the class table. To fix this, the class hash is set explicitly.
+        // Apart from that, snapshotting seems to work correctly, even if
+        // multiple classes are freed during snapshot (which feels awkward).
+        // Tried adding a BoxedFloat64 class, but similar issues remained.
+        floatClass.hash = 34;
         var mapSomeObjects = function() {
             if (obj) {
                 var stop = done + (this.oldSpaceCount / 20 | 0);    // do it in 20 chunks
@@ -1056,7 +1064,9 @@ Object.subclass('Squeak.Image',
         this.largeNegIntClass = oopMap[special[Squeak.splOb_ClassLargeNegativeInteger]];
         // init named prototypes
         this.characterClass.classInstProto("Character");
-        this.floatClass.classInstProto("BoxedFloat64");
+        // In the tiny image for CodeParadise no BoxedFloat64 exists, use Float instead
+        //this.floatClass.classInstProto("BoxedFloat64");
+        this.floatClass.classInstProto("Float");
         this.largePosIntClass.classInstProto("LargePositiveInteger");
         this.largeNegIntClass.classInstProto("LargeNegativeInteger");
         this.characterTable = {};
