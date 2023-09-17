@@ -11,6 +11,7 @@ function CpDOMPlugin() {
     eventClassMap: {},
     eventsReceived: [],
     throttleEventTypes: [ "pointermove", "touchmove", "wheel", "gesturechange" ],
+    transitionStartTick: performance.now(),
     namespaces: [
       // Default namespaces (for attributes, therefore without elementClass)
       { prefix: "xlink", uri: "http://www.w3.org/1999/xlink", elementClass: null },
@@ -32,7 +33,7 @@ function CpDOMPlugin() {
 
     // Helper method for running a process uninterrupted
     runUninterrupted: function(process, endTime) {
-      if(!process) {
+      if(!process || process.isNil) {
         return;
       }
 
@@ -1120,7 +1121,6 @@ function CpDOMPlugin() {
     "primitiveTransitionRegisterProcess:": function(argCount) {
       if(argCount !== 1) return false;
       this.transitionProcess = this.interpreterProxy.stackValue(0);
-      this.transitionStartTick = performance.now();
       return this.answerSelf(argCount);
     },
     "primitiveTransitionTickCount": function(argCount) {
