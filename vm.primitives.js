@@ -185,7 +185,7 @@ Object.subclass('Squeak.Primitives',
             case 95: return this.primitiveInputWord(argCount);
             case 96: return this.namedPrimitive('BitBltPlugin', 'primitiveCopyBits', argCount);
             case 97: return this.primitiveSnapshot(argCount);
-            case 98: this.vm.warnOnce("missing primitive 98 (primitiveStoreImageSegment)"); return false;
+            case 98: return this.primitiveStoreImageSegment(argCount);
             case 99: return this.primitiveLoadImageSegment(argCount);
             case 100: return this.vm.primitivePerformWithArgs(argCount, true); // Object.perform:withArguments:inSuperclass: (Blue Book: primitiveSignalAtTick)
             case 101: return this.primitiveBeCursor(argCount); // Cursor.beCursor
@@ -354,6 +354,7 @@ Object.subclass('Squeak.Primitives',
             case 216: if (this.oldPrims) return this.namedPrimitive('SocketPlugin', 'primitiveSocketRemotePort', argCount);
             case 217: if (this.oldPrims) return this.namedPrimitive('SocketPlugin', 'primitiveSocketConnectToPort', argCount);
             case 218: if (this.oldPrims) return this.namedPrimitive('SocketPlugin', 'primitiveSocketListenOnPort', argCount);
+                else { this.vm.warnOnce("missing primitive: 218 (tryNamedPrimitiveInForWithArgs"); return false; }
             case 219: if (this.oldPrims) return this.namedPrimitive('SocketPlugin', 'primitiveSocketCloseConnection', argCount);
             case 220: if (this.oldPrims) return this.namedPrimitive('SocketPlugin', 'primitiveSocketAbortConnection', argCount);
                 break;  // fail 212-220 if fell through
@@ -1450,6 +1451,16 @@ Object.subclass('Squeak.Primitives',
         this.vm.popN(argCount);
         return true;
     },
+    primitiveStoreImageSegment: function(argCount) {
+        var arrayOfRoots = this.stackNonInteger(2),
+            segmentWordArray = this.stackNonInteger(1),
+            outPointerArray = this.stackNonInteger(0);
+        if (!arrayOfRoots.pointers || !segmentWordArray.words || !outPointerArray.pointers) return false;
+        var success = this.vm.image.storeImageSegment(segmentWordArray, outPointerArray, arrayOfRoots);
+        if (!success) return false;
+        this.vm.popN(argCount); // return self
+        return true;
+    },
     primitiveLoadImageSegment: function(argCount) {
         var segmentWordArray = this.stackNonInteger(1),
             outPointerArray = this.stackNonInteger(0);
@@ -1891,7 +1902,7 @@ Object.subclass('Squeak.Primitives',
             case 1004: value = Squeak.vmVersion + ' ' + Squeak.vmMakerVersion; break;
             case 1005: value = Squeak.windowSystem; break;
             case 1006: value = Squeak.vmBuild; break;
-            case 1007: value = Squeak.vmVersion; break; // Interpreter class
+            case 1007: value = Squeak.vmInterpreterVersion; break; // Interpreter class
             // case 1008: Cogit class
             case 1009: value = Squeak.vmVersion + ' Date: ' + Squeak.vmDate; break; // Platform source version
             default:
@@ -2018,6 +2029,7 @@ Object.subclass('Squeak.Primitives',
             case 65: return 0;
             // 66   the byte size of a stack page in the stack zone  (read-only; Cog VMs only)
             // 67   the maximum allowed size of old space in bytes, 0 implies no internal limit (Spur VMs only).
+            case 67: return this.vm.image.totalMemory;
             // 68 - 69 reserved for more Cog-related info
             // 70   the value of VM_PROXY_MAJOR (the interpreterProxy major version number)
             // 71   the value of VM_PROXY_MINOR (the interpreterProxy minor version number)

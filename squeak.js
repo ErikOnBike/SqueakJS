@@ -1110,7 +1110,7 @@ function downloadFile(file, display, options, thenDo) {
             return alert("Failed to download:\n" + file.url);
         }
         console.warn('Retrying with CORS proxy: ' + file.url);
-        var proxy = 'https://cors-anywhere.herokuapp.com/',
+        var proxy = 'https://corsproxy.io/?',
             retry = new XMLHttpRequest();
         retry.open('GET', proxy + file.url);
         if (options.ajax) retry.setRequestHeader("X-Requested-With", "XMLHttpRequest");
@@ -1149,6 +1149,9 @@ SqueakJS.runSqueak = function(imageUrl, canvas, options) {
     if (!imageUrl && options.image) imageUrl = options.image;
     var baseUrl = options.url || (imageUrl && imageUrl.replace(/[^\/]*$/, "")) || "";
     options.url = baseUrl;
+    if (baseUrl[0] === "/" && baseUrl[1] !== "/" && baseUrl.length > 1 && options.root === "/") {
+        options.root = baseUrl;
+    }
     fetchTemplates(options);
     var display = createSqueakDisplay(canvas, options),
         image = {url: null, name: null, image: true, data: null},

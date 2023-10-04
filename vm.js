@@ -24,12 +24,13 @@
 Object.extend(Squeak,
 "version", {
     // system attributes
-    vmVersion: "SqueakJS 1.0.5",
-    vmDate: "2022-11-19",               // Maybe replace at build time?
+    vmVersion: "SqueakJS 1.0.6",
+    vmDate: "2023-09-30",               // Maybe replace at build time?
     vmBuild: "unknown",                 // or replace at runtime by last-modified?
     vmPath: "unknown",                  // Replace at runtime
     vmFile: "vm.js",
     vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
+    vmInterpreterVersion: "JSInterpreter VMMaker.js-codefrau.1", // for Smalltalk interpreterVMMakerVersion
     platformName: "JS",
     platformSubtype: "unknown",         // Replace at runtime
     osVersion: "unknown",               // Replace at runtime
@@ -67,7 +68,8 @@ Object.extend(Squeak,
     splOb_ClassCharacter: 19,
     splOb_SelectorDoesNotUnderstand: 20,
     splOb_SelectorCannotReturn: 21,
-    splOb_TheInputSemaphore: 22,
+    // splOb_TheInputSemaphore: 22, // old? unused in SqueakJS
+    splOb_ProcessSignalingLowSpace: 22,
     splOb_SpecialSelectors: 23,
     splOb_CharacterTable: 24,
     splOb_SelectorMustBeBoolean: 25,
