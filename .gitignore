@@ -3,3 +3,4 @@ gh-pages
 dist/*.min.js*
 client-environment.image
 *.swp
+.DS_Store
