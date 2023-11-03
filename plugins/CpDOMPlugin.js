@@ -709,7 +709,7 @@ function CpDOMPlugin() {
     // TemplateComponent helper methods
     ensureShadowRoot: function(elementClass, domElement) {
 
-      // Attach shadow DOM (if not already presnet) and copy template (if available)
+      // Attach shadow DOM (if not already present) and copy template (if available)
       if(!domElement.shadowRoot) {
         var shadowRoot = domElement.attachShadow({ mode: "open" });
         if(elementClass.templateElement) {
