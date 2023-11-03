@@ -223,6 +223,13 @@ function CpDOMPlugin() {
         window.document.createElement(tagName) :
         window.document.createElementNS(namespace.uri, tagName)
       ;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      if(tagName === receiver.customTag) {
+        // Register if WebComponent is created from code (vs being created from markup content).
+        // This information is used in the WebComponent constructor to allow correct initialization
+        // of all WebComponents.
+        element.__cp_created_from_code = true;
+      }
       return this.answer(argCount, this.instanceForElement(element));
     },
     "primitiveDomElementDocument": function(argCount) {
@@ -727,6 +734,23 @@ function CpDOMPlugin() {
           constructor() {
             super();
             thisHandle.ensureShadowRoot(receiver, this);
+
+            // Since a WebComponent can be created both from code as well as from
+            // markup content, we need to inform the Smalltalk code of the later
+            // situation. In this way the Smalltalk #initialize message can be send
+            // to the new instance (in all situations).
+            // Use the fact that setTimeout will run code after current execution
+            // has finished. This means the regular instantiation code has finished
+            // (in the situation it was called from code).
+            var instance = this;
+            window.setTimeout(function() {
+              // If component is NOT created by code, dispatch event to allow Smalltalk
+              // code to do the initialization after all.
+              if(!instance.__cp_created_from_code) {
+                var requestInitEvent = new CustomEvent("createdfrommarkup", { detail: thisHandle.instanceForElement(instance) });
+                window.document.dispatchEvent(requestInitEvent);
+              }
+            }, 0);
           }
         };
 
