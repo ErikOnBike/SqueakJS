@@ -113,8 +113,8 @@
     Object.extend(Squeak,
     "version", {
         // system attributes
-        vmVersion: "SqueakJS 1.0.6",
-        vmDate: "2023-09-30",               // Maybe replace at build time?
+        vmVersion: "SqueakJS 1.1.1",
+        vmDate: "2023-10-26",               // Maybe replace at build time?
         vmBuild: "unknown",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
@@ -1415,7 +1415,7 @@
     },
     'initializing', {
         initialize: function(name) {
-            this.headRoom = 32000000; // TODO: pass as option
+            this.headRoom = 100000000; // TODO: pass as option
             this.totalMemory = 0;
             this.name = name;
             this.gcCount = 0;
@@ -1624,6 +1624,7 @@
             }
 
             this.totalMemory = this.oldSpaceBytes + this.headRoom;
+            this.totalMemory = Math.ceil(this.totalMemory / 1000000) * 1000000;
 
             {
                 // For debugging: re-create all objects from named prototypes
@@ -1812,6 +1813,7 @@
             this.gcCount++;
             this.gcMilliseconds += Date.now() - start;
             console.log("Full GC (" + reason + "): " + (Date.now() - start) + " ms");
+            if (reason === "primitive") console.log("  surviving objects: " + this.oldSpaceCount + " (" + this.oldSpaceBytes + " bytes)");
             return newObjects.length > 0 ? newObjects[0] : null;
         },
         gcRoots: function() {
@@ -2245,22 +2247,153 @@
             return this.isSpur ? 6521 : this.hasClosures ? 6504 : 6502;
         },
         segmentVersion: function() {
-            var dnu = this.specialObjectsArray.pointers[Squeak.splOb_SelectorDoesNotUnderstand],
-                wholeWord = new Uint32Array(dnu.bytes.buffer, 0, 1);
-            return this.formatVersion() | (wholeWord[0] & 0xFF000000);
+            // a more complex version that tells both the word reversal and the endianness
+            // of the machine it came from.  Low half of word is 6502.  Top byte is top byte
+            // of #doesNotUnderstand: ($d on big-endian or $s on little-endian).
+            // In SqueakJS we write non-Spur images and segments as big-endian, Spur as little-endian
+            // (TODO: write non-Spur as little-endian too since that matches all modern platforms)
+            var dnuFirstWord = this.isSpur ? 'seod' : 'does';
+            return this.formatVersion() | (dnuFirstWord.charCodeAt(0) << 24);
+        },
+        storeImageSegment: function(segmentWordArray, outPointerArray, arrayOfRoots) {
+            // This primitive will store a binary image segment (in the same format as the Squeak image file) of the receiver and every object in its proper tree of subParts (ie, that is not refered to from anywhere else outside the tree).  Note: all elements of the receiver are treated as roots determining the extent of the tree.  All pointers from within the tree to objects outside the tree will be copied into the array of outpointers.  In their place in the image segment will be an oop equal to the offset in the outpointer array (the first would be 4). but with the high bit set.
+            // The primitive expects the array and wordArray to be more than adequately long.  In this case it returns normally, and truncates the two arrays to exactly the right size.  If either array is too small, the primitive will fail, but in no other case.
+
+            // use a DataView to access the segment as big-endian words
+            var segment = new DataView(segmentWordArray.words.buffer),
+                pos = 0, // write position in segment in bytes
+                outPointers = outPointerArray.pointers,
+                outPos = 0; // write position in outPointers in words
+
+            // write header
+            segment.setUint32(pos, this.segmentVersion()); pos += 4;
+
+            // we don't want to deal with new space objects
+            this.fullGC("storeImageSegment");
+
+            // First mark the root array and all root objects
+            arrayOfRoots.mark = true;
+            for (var i = 0; i < arrayOfRoots.pointers.length; i++)
+                if (typeof arrayOfRoots.pointers[i] === "object")
+                    arrayOfRoots.pointers[i].mark = true;
+
+            // Then do a mark pass over all objects. This will stop at our marked roots,
+            // thus leaving our segment unmarked in their shadow
+            this.markReachableObjects();
+
+            // Finally unmark the rootArray and all root objects
+            arrayOfRoots.mark = false;
+            for (var i = 0; i < arrayOfRoots.pointers.length; i++)
+                if (typeof arrayOfRoots.pointers[i] === "object")
+                    arrayOfRoots.pointers[i].mark = false;
+
+            // helpers for mapping objects to segment oops
+            var segmentOops = {}, // map from object oop to segment oop
+                todo = []; // objects that were added to the segment but still need to have their oops mapped
+
+            // if an object does not yet have a segment oop, write it to the segment or outPointers
+            function addToSegment(object) {
+                var oop = segmentOops[object.oop];
+                if (!oop) {
+                    if (object.mark) {
+                        // object is outside segment, add to outPointers
+                        if (outPos >= outPointers.length) return 0; // fail if outPointerArray is too small
+                        oop = 0x80000004 + outPos * 4;
+                        outPointers[outPos++] = object;
+                        // no need to mark outPointerArray dirty, all objects are in old space
+                    } else {
+                        // add object to segment.
+                        if (pos + object.totalBytes() > segment.byteLength) return 0; // fail if segment is too small
+                        oop = pos + (object.snapshotSize().header + 1) * 4; // addr plus extra headers + base header
+                        pos = object.writeTo(segment, pos, this);
+                        // the written oops inside the object still need to be mapped to segment oops
+                        todo.push(object);
+                    }
+                    segmentOops[object.oop] = oop;
+                }
+                return oop;
+            }
+            addToSegment = addToSegment.bind(this);
+
+            // if we have to bail out, clean up what we modified
+            function cleanUp() {
+                // unmark all objects
+                var obj = this.firstOldObject;
+                while (obj) {
+                    obj.mark = false;
+                    obj = obj.nextObject;
+                }
+                // forget weak objects collected by markReachableObjects()
+                this.weakObjects = null;
+                // return code for failure
+                return false;
+            }
+            cleanUp = cleanUp.bind(this);
+
+            // All external objects, and only they, are now marked.
+            // Write the array of roots into the segment
+            addToSegment(arrayOfRoots);
+
+            // Now fix the oops inside written objects.
+            // This will add more objects to the segment (if they are unmarked),
+            // or to outPointers (if they are marked).
+            while (todo.length > 0) {
+                var obj = todo.shift(),
+                    oop = segmentOops[obj.oop],
+                    headerSize = obj.snapshotSize().header,
+                    objBody = obj.pointers,
+                    hasClass = headerSize > 0;
+                if (hasClass) {
+                    var classOop = addToSegment(obj.sqClass);
+                    if (!classOop) return cleanUp(); // ran out of space
+                    var headerType = headerSize === 1 ? Squeak.HeaderTypeClass : Squeak.HeaderTypeSizeAndClass;
+                    segment.setUint32(oop - 8, classOop | headerType);
+                }
+                if (!objBody) continue;
+                for (var i = 0; i < objBody.length; i++) {
+                    var child = objBody[i];
+                    if (typeof child !== "object") continue;
+                    var childOop = addToSegment(child);
+                    if (!childOop) return cleanUp(); // ran out of space
+                    segment.setUint32(oop + i * 4, childOop);
+                }
+            }
+
+            // Truncate image segment and outPointerArray to actual size
+            var obj = segmentWordArray.oop < outPointerArray.oop ? segmentWordArray : outPointerArray,
+                removedBytes = 0;
+            while (obj) {
+                obj.oop -= removedBytes;
+                if (obj === segmentWordArray) {
+                    removedBytes += (obj.words.length * 4) - pos;
+                    obj.words = new Uint32Array(obj.words.buffer.slice(0, pos));
+                } else if (obj === outPointerArray) {
+                    removedBytes += (obj.pointers.length - outPos) * 4;
+                    obj.pointers.length = outPos;
+                }
+                obj = obj.nextObject;
+            }
+            this.oldSpaceBytes -= removedBytes;
+
+            // unmark all objects etc
+            cleanUp();
+
+            return true;
         },
         loadImageSegment: function(segmentWordArray, outPointerArray) {
             // The C VM creates real objects from the segment in-place.
-            // We do the same, linking the new objects directly into old-space.
+            // We do the same, inserting the new objects directly into old-space
+            // between segmentWordArray and its following object (endMarker).
+            // This only increases oldSpaceCount but not oldSpaceBytes.
             // The code below is almost the same as readFromBuffer() ... should unify
-            var data = new DataView(segmentWordArray.words.buffer),
+            var segment = new DataView(segmentWordArray.words.buffer),
                 littleEndian = false,
                 nativeFloats = false,
                 pos = 0;
             var readWord = function() {
-                var int = data.getUint32(pos, littleEndian);
+                var word = segment.getUint32(pos, littleEndian);
                 pos += 4;
-                return int;
+                return word;
             };
             var readBits = function(nWords, format) {
                 if (format < 5) { // pointers (do endian conversion)
@@ -2269,7 +2402,7 @@
                         oops.push(readWord());
                     return oops;
                 } else { // words (no endian conversion yet)
-                    var bits = new Uint32Array(data.buffer, pos, nWords);
+                    var bits = new Uint32Array(segment.buffer, pos, nWords);
                     pos += nWords * 4;
                     return bits;
                 }
@@ -2291,7 +2424,7 @@
                 oopOffset = segmentWordArray.oop,
                 oopMap = {},
                 rawBits = {};
-            while (pos < data.byteLength) {
+            while (pos < segment.byteLength) {
                 var nWords = 0,
                     classInt = 0,
                     header = readWord();
@@ -2355,6 +2488,8 @@
         initSpurOverrides: function() {
             this.registerObject = this.registerObjectSpur;
             this.writeToBuffer = this.writeToBufferSpur;
+            this.storeImageSegment = this.storeImageSegmentSpur;
+            this.loadImageSegment = this.loadImageSegmentSpur;
         },
         spurClassTable: function(oopMap, rawBits, classPages, splObjs) {
             var classes = {},
@@ -2574,6 +2709,16 @@
             var time = Date.now() - start;
             console.log("Wrote " + n + " objects in " + time + " ms, image size " + pos + " bytes");
             return data.buffer;
+        },
+        storeImageSegmentSpur: function(segmentWordArray, outPointerArray, arrayOfRoots) {
+            // see comment in segmentVersion() if you implement this
+            // also see markReachableObjects() about immediate chars
+            this.vm.warnOnce("not implemented for Spur yet: primitive 98 (primitiveStoreImageSegment)");
+            return false;
+        },
+        loadImageSegmentSpur: function(segmentWordArray, outPointerArray) {
+            this.vm.warnOnce("not implemented for Spur yet: primitive 99 (primitiveLoadImageSegment)");
+            return null;
         },
     });
 
@@ -4061,13 +4206,22 @@
         },
         signalLowSpaceIfNecessary: function(bytesLeft) {
             if (bytesLeft < this.lowSpaceThreshold && this.lowSpaceThreshold > 0) {
-                this.signalLowSpace = true;
-                this.lowSpaceThreshold = 0;
-                var lastSavedProcess = this.specialObjects[Squeak.splOb_ProcessSignalingLowSpace];
-                if (lastSavedProcess.isNil) {
-                    this.specialObjects[Squeak.splOb_ProcessSignalingLowSpace] = this.activeProcess;
+                var increase = prompt && prompt("Out of memory, " + Math.ceil(this.image.totalMemory/1000000)
+                    + " MB used.\nEnter additional MB, or 0 to signal low space in image", "0");
+                if (increase) {
+                    var bytes = parseInt(increase, 10) * 1000000;
+                    this.image.totalMemory += bytes;
+                    this.signalLowSpaceIfNecessary(this.image.bytesLeft());
+                } else {
+                    console.warn("squeak: low memory (" + bytesLeft + "/" + this.image.totalMemory + " bytes left), signaling low space");
+                    this.signalLowSpace = true;
+                    this.lowSpaceThreshold = 0;
+                    var lastSavedProcess = this.specialObjects[Squeak.splOb_ProcessSignalingLowSpace];
+                    if (lastSavedProcess.isNil) {
+                        this.specialObjects[Squeak.splOb_ProcessSignalingLowSpace] = this.primHandler.activeProcess();
+                    }
+                    this.forceInterruptCheck();
                 }
-                this.forceInterruptCheck();
             }
        },
     },
@@ -4216,16 +4370,16 @@
             this.breakOnContextChanged = true;
             this.breakOnContextReturned = null;
         },
-        printActiveContext: function(maxWidth) {
+        printContext: function(ctx, maxWidth) {
+            if (!this.isContext(ctx)) return "NOT A CONTEXT: " + printObj(ctx);
             if (!maxWidth) maxWidth = 72;
             function printObj(obj) {
-                var value = obj.sqInstName ? obj.sqInstName() : obj.toString();
+                var value = typeof obj === 'number' || typeof obj === 'object' ? obj.sqInstName() : "<" + obj + ">";
                 value = JSON.stringify(value).slice(1, -1);
                 if (value.length > maxWidth - 3) value = value.slice(0, maxWidth - 3) + '...';
                 return value;
             }
             // temps and stack in current context
-            var ctx = this.activeContext;
             var isBlock = typeof ctx.pointers[Squeak.BlockContext_argumentCount] === 'number';
             var closure = ctx.pointers[Squeak.Context_closure];
             var isClosure = !isBlock && !closure.isNil;
@@ -4247,10 +4401,11 @@
             }
             if (isBlock) {
                 stack += '\n';
-                var nArgs = ctx.pointers[3];
+                var nArgs = ctx.pointers[Squeak.BlockContext_argumentCount];
                 var firstArg = this.decodeSqueakSP(1);
                 var lastArg = firstArg + nArgs;
-                for (var i = firstArg; i <= this.sp; i++) {
+                var sp = ctx === this.activeContext ? this.sp : ctx.pointers[Squeak.Context_stackPointer];
+                for (var i = firstArg; i <= sp; i++) {
                     var value = printObj(ctx.pointers[i]);
                     var label = '';
                     if (i <= lastArg) label = '=arg' + (i - firstArg);
@@ -4258,6 +4413,9 @@
                 }
             }
             return stack;
+        },
+        printActiveContext: function(maxWidth) {
+            return this.printContext(this.activeContext, maxWidth);
         },
         printAllProcesses: function() {
             var schedAssn = this.specialObjects[Squeak.splOb_SchedulerAssociation],
@@ -4290,8 +4448,9 @@
         printProcess: function(process, active) {
             var context = process.pointers[Squeak.Proc_suspendedContext],
                 priority = process.pointers[Squeak.Proc_priority],
-                stack = this.printStack(active ? null : context);
-            return process.toString() +" at priority " + priority + "\n" + stack;
+                stack = this.printStack(active ? null : context),
+                values = this.printContext(context);
+            return process.toString() +" at priority " + priority + "\n" + stack + values + "\n";
         },
         printByteCodes: function(aMethod, optionalIndent, optionalHighlight, optionalPC) {
             if (!aMethod) aMethod = this.method;
@@ -5344,7 +5503,7 @@
                 case 95: return this.primitiveInputWord(argCount);
                 case 96: return this.namedPrimitive('BitBltPlugin', 'primitiveCopyBits', argCount);
                 case 97: return this.primitiveSnapshot(argCount);
-                case 98: this.vm.warnOnce("missing primitive 98 (primitiveStoreImageSegment)"); return false;
+                case 98: return this.primitiveStoreImageSegment(argCount);
                 case 99: return this.primitiveLoadImageSegment(argCount);
                 case 100: return this.vm.primitivePerformWithArgs(argCount, true); // Object.perform:withArguments:inSuperclass: (Blue Book: primitiveSignalAtTick)
                 case 101: return this.primitiveBeCursor(argCount); // Cursor.beCursor
@@ -5458,7 +5617,7 @@
                 case 183: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primitiveApplyReverb', argCount);
                     break;  // fail
                 case 184: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primitiveMixLoopedSampledSound', argCount);
-                    break; // fail
+                    else return this.popNandPushIfOK(argCount+1, this.vm.trueObj); // pin
                 case 185: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primitiveMixSampledSound', argCount);
                     else return this.primitiveExitCriticalSection(argCount);
                 case 186: if (this.oldPrims) break; // unused
@@ -6274,7 +6433,7 @@
             if (indexableSize * 4 > this.vm.image.bytesLeft()) {
                 // we're not really out of memory, we have no idea how much memory is available
                 // but we need to stop runaway allocations
-                console.warn("squeak: out of memory");
+                console.warn("squeak: out of memory, failing allocation");
                 this.success = false;
                 this.vm.primFailCode = Squeak.PrimErrNoMemory;
                 return null;
@@ -6592,6 +6751,16 @@
                 rcvr.pointers[i] = arg.pointers[i];
             rcvr.dirty = arg.dirty;
             this.vm.popN(argCount);
+            return true;
+        },
+        primitiveStoreImageSegment: function(argCount) {
+            var arrayOfRoots = this.stackNonInteger(2),
+                segmentWordArray = this.stackNonInteger(1),
+                outPointerArray = this.stackNonInteger(0);
+            if (!arrayOfRoots.pointers || !segmentWordArray.words || !outPointerArray.pointers) return false;
+            var success = this.vm.image.storeImageSegment(segmentWordArray, outPointerArray, arrayOfRoots);
+            if (!success) return false;
+            this.vm.popN(argCount); // return self
             return true;
         },
         primitiveLoadImageSegment: function(argCount) {
@@ -8324,9 +8493,10 @@
                     this.showForm(context, cursorForm, bounds, true);
                 }
                 var canvas = this.display.context.canvas,
-                    scale = canvas.offsetWidth / canvas.width;
-                cursorCanvas.style.width = (cursorCanvas.width * scale|0) + "px";
-                cursorCanvas.style.height = (cursorCanvas.height * scale|0) + "px";
+                    scale = canvas.offsetWidth / canvas.width,
+                    ratio = this.display.highdpi ? window.devicePixelRatio : 1;
+                cursorCanvas.style.width = (cursorCanvas.width * ratio * scale|0) + "px";
+                cursorCanvas.style.height = (cursorCanvas.height * ratio * scale|0) + "px";
                 this.display.cursorOffsetX = cursorForm.offsetX * scale|0;
                 this.display.cursorOffsetY = cursorForm.offsetY * scale|0;
             }
@@ -8625,7 +8795,13 @@
             if (!(form.depth > 0)) return null; // happens if not int
             form.pixPerWord = 32 / form.depth;
             form.pitch = (form.width + (form.pixPerWord - 1)) / form.pixPerWord | 0;
-            if (form.bits.length !== (form.pitch * form.height)) return null;
+            if (form.bits.length !== (form.pitch * form.height)) {
+                if (form.bits.length > (form.pitch * form.height)) {
+                    this.vm.warnOnce("loadForm(): " + form.bits.length + " !== " + form.pitch + "*" + form.height + "=" + (form.pitch*form.height));
+                } else {
+                    return null;
+                }
+            }
             return form;
         },
         theDisplay: function() {
@@ -8914,6 +9090,14 @@
             if (!errorDo) errorDo = function(err) { console.log(err); };
             var path = this.splitFilePath(filepath);
             if (!path.basename) return errorDo("Invalid path: " + filepath);
+            if (Squeak.debugFiles) {
+                console.log("Reading " + path.fullname);
+                var realThenDo = thenDo;
+                thenDo = function(data) {
+                    console.log("Read " + data.byteLength + " bytes from " + path.fullname);
+                    realThenDo(data);
+                };
+            }
             // if we have been writing to memory, return that version
             if (window.SqueakDBFake && SqueakDBFake.bigFiles[path.fullname])
                 return thenDo(SqueakDBFake.bigFiles[path.fullname]);
@@ -8948,6 +9132,7 @@
                 directory[path.basename] = entry;
             } else if (entry[3]) // is a directory
                 return null;
+            if (Squeak.debugFiles) console.log("Writing " + path.fullname + " (" + contents.byteLength + " bytes)");
             // update directory entry
             entry[2] = now; // modification time
             entry[4] = contents.byteLength || contents.length || 0;
@@ -8969,6 +9154,7 @@
             // delete entry from directory
             delete directory[path.basename];
             Squeak.Settings["squeak:" + path.dirname] = JSON.stringify(directory);
+            if (Squeak.debugFiles) console.log("Deleting " + path.fullname);
             if (entryOnly) return true;
             // delete file contents (async)
             this.dbTransaction("readwrite", "delete " + filepath, function(fileStore) {
@@ -8984,6 +9170,7 @@
             var samedir = oldpath.dirname == newpath.dirname;
             var newdir = samedir ? olddir : this.dirList(newpath.dirname); if (!newdir) return false;
             if (newdir[newpath.basename]) return false; // exists already
+            if (Squeak.debugFiles) console.log("Renaming " + oldpath.fullname + " to " + newpath.fullname);
             delete olddir[oldpath.basename];            // delete old entry
             entry[0] = newpath.basename;                // rename entry
             newdir[newpath.basename] = entry;           // add new entry
@@ -9013,6 +9200,7 @@
             if (withParents && !Squeak.Settings["squeak:" + path.dirname]) Squeak.dirCreate(path.dirname, true);
             var directory = this.dirList(path.dirname); if (!directory) return false;
             if (directory[path.basename]) return false;
+            if (Squeak.debugFiles) console.log("Creating directory " + path.fullname);
             var now = this.totalSeconds(),
                 entry = [/*name*/ path.basename, /*ctime*/ now, /*mtime*/ now, /*dir*/ true, /*size*/ 0];
             directory[path.basename] = entry;
@@ -9025,8 +9213,8 @@
             var directory = this.dirList(path.dirname); if (!directory) return false;
             if (!directory[path.basename]) return false;
             var children = this.dirList(path.fullname);
-            if (!children) return false;
-            for (var child in children) return false; // not empty
+            if (children) for (var child in children) return false; // not empty
+            if (Squeak.debugFiles) console.log("Deleting directory " + path.fullname);
             // delete from parent
             delete directory[path.basename];
             Squeak.Settings["squeak:" + path.dirname] = JSON.stringify(directory);
@@ -10195,7 +10383,12 @@
                 handle = this.stackNonInteger(3);
             if (!this.success || !handle.file || !handle.fileWrite) return false;
             if (!count) return this.popNandPushIfOK(argCount+1, 0);
-            var array = arrayObj.bytes || arrayObj.wordsAsUint8Array();
+            var array = arrayObj.bytes;
+            if (!array) {
+                array = arrayObj.wordsAsUint8Array();
+                startIndex *= 4;
+                count *= 4;
+            }
             if (!array) return false;
             if (startIndex < 0 || startIndex + count > array.length)
                 return false;
@@ -10276,19 +10469,19 @@
                 if (file.contents === false) // failed to get contents before
                     return false;
                 this.vm.freeze(function(unfreeze) {
-                    Squeak.fileGet(file.name,
-                        function success(contents) {
-                            if (contents == null) return error(file.name);
-                            file.contents = this.asUint8Array(contents);
-                            unfreeze();
-                            func(file);
-                        }.bind(this),
-                        function error(msg) {
-                            console.log("File get failed: " + msg);
-                            file.contents = false;
-                            unfreeze();
-                            func(file);
-                        }.bind(this));
+                    var error = (function(msg) {
+                        console.log("File get failed: " + msg);
+                        file.contents = false;
+                        unfreeze();
+                        func(file);
+                    }).bind(this),
+                    success = (function(contents) {
+                        if (contents == null) return error(file.name);
+                        file.contents = this.asUint8Array(contents);
+                        unfreeze();
+                        func(file);
+                    }).bind(this);
+                    Squeak.fileGet(file.name, success, error);
                 }.bind(this));
             }
             return true;
@@ -21022,7 +21215,12 @@
     		destPitch = (DIV((destWidth + (destPPW - 1)), destPPW)) * 4;
     		destBitsSize = BYTESIZEOF(destBits);
     		if (!(interpreterProxy.isWordsOrBytes(destBits) && (destBitsSize === (destPitch * destHeight)))) {
-    			return false;
+    			if (interpreterProxy.isWordsOrBytes(destBits) && (destBitsSize > (destPitch * destHeight))) {
+    				interpreterProxy.vm.warnOnce("BitBlt>>loadBitBltDestForm: destBitsSize != destPitch * destHeight, expected " +
+    					destPitch + "*" + destHeight + "=" + (destPitch * destHeight) + ", got " + destBitsSize);
+    			} else {
+    				return false;
+    			}
     		}
     		destBits = destBits.wordsOrBytes();
     	}
@@ -21152,7 +21350,12 @@
     		sourcePitch = (DIV((sourceWidth + (sourcePPW - 1)), sourcePPW)) * 4;
     		sourceBitsSize = BYTESIZEOF(sourceBits);
     		if (!(interpreterProxy.isWordsOrBytes(sourceBits) && (sourceBitsSize === (sourcePitch * sourceHeight)))) {
-    			return false;
+    			if (interpreterProxy.isWordsOrBytes(sourceBits) && (sourceBitsSize > (sourcePitch * sourceHeight))) {
+    				interpreterProxy.vm.warnOnce("BitBlt>>loadBitBltSourceForm: sourceBitsSize != sourcePitch * sourceHeight, expected " +
+    					sourcePitch + "*" + sourceHeight + "=" + (sourcePitch * sourceHeight) + ", got " + sourceBitsSize);
+    			} else {
+    				return false;
+    			}
     		}
     		sourceBits = sourceBits.wordsOrBytes();
     	}
@@ -54409,9 +54612,10 @@
         // we don't try to enable it again in the next event
         function fullscreenChange(fullscreen) {
             display.fullscreen = fullscreen;
-            box.style.background = fullscreen ? 'black' : '';
-            if (options.header) options.header.style.display = fullscreen ? 'none' : '';
-            if (options.footer) options.footer.style.display = fullscreen ? 'none' : '';
+            var fullwindow = fullscreen || options.fullscreen;
+            box.style.background = fullwindow ? 'black' : '';
+            if (options.header) options.header.style.display = fullwindow ? 'none' : '';
+            if (options.footer) options.footer.style.display = fullwindow ? 'none' : '';
             if (options.fullscreenCheckbox) options.fullscreenCheckbox.checked = fullscreen;
             setTimeout(window.onresize, 0);
         }
@@ -54597,6 +54801,7 @@
             fullscreen: false,
             width: 0,   // if 0, VM uses canvas.width
             height: 0,  // if 0, VM uses canvas.height
+            highdpi: options.highdpi,
             mouseX: 0,
             mouseY: 0,
             buttons: 0,
@@ -54761,7 +54966,8 @@
         function dist(a, b) {return dd(a.pageX, a.pageY, b.pageX, b.pageY);}
         function adjustDisplay(l, t, w, h) {
             var cursorCanvas = display.cursorCanvas,
-                scale = w / canvas.width;
+                scale = w / canvas.width,
+                ratio = display.highdpi ? window.devicePixelRatio : 1;
             canvas.style.left = (l|0) + "px";
             canvas.style.top = (t|0) + "px";
             canvas.style.width = (w|0) + "px";
@@ -54769,8 +54975,8 @@
             if (cursorCanvas) {
                 cursorCanvas.style.left = (l + display.cursorOffsetX + display.mouseX * scale|0) + "px";
                 cursorCanvas.style.top = (t + display.cursorOffsetY + display.mouseY * scale|0) + "px";
-                cursorCanvas.style.width = (cursorCanvas.width * scale|0) + "px";
-                cursorCanvas.style.height = (cursorCanvas.height * scale|0) + "px";
+                cursorCanvas.style.width = (cursorCanvas.width * ratio * scale|0) + "px";
+                cursorCanvas.style.height = (cursorCanvas.height * ratio * scale|0) + "px";
             }
             if (!options.pixelated) {
                 var pixelScale = window.devicePixelRatio * scale;
@@ -55117,7 +55323,7 @@
                 var scaleW = w < options.minWidth ? options.minWidth / w : 1,
                     scaleH = h < options.minHeight ? options.minHeight / h : 1,
                     scale = Math.max(scaleW, scaleH);
-                if (options.highdpi) scale *= window.devicePixelRatio;
+                if (display.highdpi) scale *= window.devicePixelRatio;
                 display.width = Math.floor(w * scale);
                 display.height = Math.floor(h * scale);
                 display.initialScale = w / display.width;
@@ -55149,6 +55355,7 @@
             // set cursor scale
             var cursorCanvas = display.cursorCanvas,
                 scale = canvas.offsetWidth / canvas.width;
+            if (display.highdpi) scale *= window.devicePixelRatio;
             if (cursorCanvas && options.fixedWidth) {
                 cursorCanvas.style.width = (cursorCanvas.width * scale) + "px";
                 cursorCanvas.style.height = (cursorCanvas.height * scale) + "px";
@@ -55433,6 +55640,9 @@
         if (!imageUrl && options.image) imageUrl = options.image;
         var baseUrl = options.url || (imageUrl && imageUrl.replace(/[^\/]*$/, "")) || "";
         options.url = baseUrl;
+        if (baseUrl[0] === "/" && baseUrl[1] !== "/" && baseUrl.length > 1 && options.root === "/") {
+            options.root = baseUrl;
+        }
         fetchTemplates(options);
         var display = createSqueakDisplay(canvas, options),
             image = {url: null, name: null, image: true, data: null},

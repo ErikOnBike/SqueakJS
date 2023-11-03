@@ -281,7 +281,10 @@ Object.subclass('Squeak.Primitives',
             case 174: if (this.oldPrims) return this.namedPrimitive('SoundPlugin', 'primitiveSoundPlaySamples', argCount);
                 else return this.popNandPushIfOK(argCount+1, this.objectAtPut(false,false,true)); // slotAt:put:
             case 175: if (this.oldPrims) return this.namedPrimitive('SoundPlugin', 'primitiveSoundPlaySilence', argCount);
-                else return this.popNandPushIfOK(argCount+1, this.behaviorHash(this.stackNonInteger(0)));
+                else if (!this.vm.image.isSpur) {
+                    this.vm.warnOnce("primitive 175 called in non-spur image"); // workaround for Cuis
+                    return this.popNandPushIfOK(argCount+1, this.identityHash(this.stackNonInteger(0)));
+                } else return this.popNandPushIfOK(argCount+1, this.behaviorHash(this.stackNonInteger(0)));
             case 176: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primWaveTableSoundmixSampleCountintostartingAtpan', argCount);
                 else return this.popNandPushIfOK(argCount+1, this.vm.image.isSpur ? 0x3FFFFF : 0xFFF); // primitiveMaxIdentityHash
             case 177: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primFMSoundmixSampleCountintostartingAtpan', argCount);
@@ -299,7 +302,7 @@ Object.subclass('Squeak.Primitives',
             case 183: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primitiveApplyReverb', argCount);
                 break;  // fail
             case 184: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primitiveMixLoopedSampledSound', argCount);
-                break; // fail
+                else return this.popNandPushIfOK(argCount+1, this.vm.trueObj); // pin
             case 185: if (this.oldPrims) return this.namedPrimitive('SoundGenerationPlugin', 'primitiveMixSampledSound', argCount);
                 else return this.primitiveExitCriticalSection(argCount);
             case 186: if (this.oldPrims) break; // unused
@@ -1131,7 +1134,7 @@ Object.subclass('Squeak.Primitives',
         if (indexableSize * 4 > this.vm.image.bytesLeft()) {
             // we're not really out of memory, we have no idea how much memory is available
             // but we need to stop runaway allocations
-            console.warn("squeak: out of memory");
+            console.warn("squeak: out of memory, failing allocation");
             this.success = false;
             this.vm.primFailCode = Squeak.PrimErrNoMemory;
             return null;
