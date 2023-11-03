@@ -567,7 +567,7 @@ function CpSystemPlugin() {
     },
     "primitiveEnvironmentReload": function(argCount) {
       if(argCount !== 0) return false;
-      document.location.reload(true);
+      window.document.location.reload(true);
       return this.answerSelf(argCount);
     },
 

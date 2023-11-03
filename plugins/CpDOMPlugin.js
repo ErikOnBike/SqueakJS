@@ -86,7 +86,7 @@ function CpDOMPlugin() {
         return self.originalMakeStObject.call(this, obj, proxyClass);
       };
       // Make sure document has a localName
-      document.localName = "document";
+      window.document.localName = "document";
     },
 
     // Helper methods for namespaces
