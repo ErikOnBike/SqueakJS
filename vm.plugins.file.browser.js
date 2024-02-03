@@ -30,7 +30,7 @@ Object.extend(Squeak.Primitives.prototype,
         this.success = Squeak.dirCreate(dirName);
         if (!this.success) {
             var path = Squeak.splitFilePath(dirName);
-            console.log("Directory not created: " + path.fullname);
+            if (Squeak.debugFiles) console.warn("Directory not created: " + path.fullname);
         }
         return this.popNIfOK(argCount);
     },
@@ -56,7 +56,7 @@ Object.extend(Squeak.Primitives.prototype,
         var entries = Squeak.dirList(dirName, true);
         if (!entries) {
             var path = Squeak.splitFilePath(dirName);
-            console.log("Directory not found: " + path.fullname);
+            if (Squeak.debugFiles) console.log("Directory not found: " + path.fullname);
             return false;
         }
         var entry = fileName === "." ? [".", 0, 0, true, 0] : entries[fileName];
@@ -72,8 +72,11 @@ Object.extend(Squeak.Primitives.prototype,
         var entries = Squeak.dirList(dirName, true);
         if (!entries) {
             var path = Squeak.splitFilePath(dirName);
-            console.log("Directory not found: " + path.fullname);
+            if (Squeak.debugFiles) console.log("Directory not found: " + path.fullname);
             return false;
+        }
+        if (Squeak.debugFiles && index === 1) {
+            console.log("Reading directory " + dirName + " with " + Object.keys(entries).length + " entries");
         }
         var keys = Object.keys(entries).sort(),
             entry = entries[keys[index - 1]];
@@ -158,8 +161,13 @@ Object.extend(Squeak.Primitives.prototype,
             handle = this.stackNonInteger(3);
         if (!this.success || !arrayObj.isWordsOrBytes() || !handle.file) return false;
         if (!count) return this.popNandPushIfOK(argCount+1, 0);
-        var size = arrayObj.isWords() ? arrayObj.wordsSize() : arrayObj.bytesSize();
-        if (startIndex < 0 || startIndex + count > size)
+        var array = arrayObj.bytes;
+        if (!array) {
+            array = arrayObj.wordsAsUint8Array();
+            startIndex *= 4;
+            count *= 4;
+        }
+        if (startIndex < 0 || startIndex + count > array.length)
             return false;
         if (typeof handle.file === "string") {
             //this.fileConsoleRead(handle.file, array, startIndex, count);
@@ -169,21 +177,11 @@ Object.extend(Squeak.Primitives.prototype,
         return this.fileContentsDo(handle.file, function(file) {
             if (!file.contents)
                 return this.popNandPushIfOK(argCount+1, 0);
-            var srcArray, dstArray;
-            if (arrayObj.isWords()) {
-                srcArray = new Uint32Array(file.contents.buffer);
-                dstArray = arrayObj.words,
-                count = Math.min(count, (file.size - handle.filePos) >>> 2);
-                for (var i = 0; i < count; i++)
-                    dstArray[startIndex + i] = srcArray[handle.filePos + i];
-                handle.filePos += count << 2;
-            } else {
-                srcArray = file.contents;
-                dstArray = arrayObj.bytes;
-                count = Math.min(count, file.size - handle.filePos);
-                for (var i = 0; i < count; i++)
-                    dstArray[startIndex + i] = srcArray[handle.filePos++];
-            }
+            var srcArray = file.contents,
+                dstArray = array;
+            count = Math.min(count, file.size - handle.filePos);
+            for (var i = 0; i < count; i++)
+                dstArray[startIndex + i] = srcArray[handle.filePos++];
             this.popNandPushIfOK(argCount+1, Math.max(0, count));
         }.bind(this));
     },
@@ -293,13 +291,13 @@ Object.extend(Squeak.Primitives.prototype,
             }
         } else {
             if (!writeFlag) {
-                console.log("File not found: " + path.fullname);
+                if (Squeak.debugFiles) console.log("File not found: " + path.fullname);
                 return null;
             }
             contents = new Uint8Array();
             entry = Squeak.filePut(path.fullname, contents.buffer);
             if (!entry) {
-                console.log("Cannot create file: " + path.fullname);
+                if (Squeak.debugFiles) console.log("Cannot create file: " + path.fullname);
                 return null;
             }
         }
@@ -327,7 +325,7 @@ Object.extend(Squeak.Primitives.prototype,
                 return false;
             this.vm.freeze(function(unfreeze) {
                 var error = (function(msg) {
-                    console.log("File get failed: " + msg);
+                    console.warn("File get failed: " + msg);
                     file.contents = false;
                     unfreeze();
                     func(file);

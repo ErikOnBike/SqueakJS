@@ -24,7 +24,7 @@
 Object.subclass('Squeak.Interpreter',
 'initialization', {
     initialize: function(image, display) {
-        console.log('squeak: initializing interpreter ' + Squeak.vmVersion);
+        console.log('squeak: initializing interpreter ' + Squeak.vmVersion + ' (' + Squeak.vmDate + ')');
         this.Squeak = Squeak;   // store locally to avoid dynamic lookup in Lively
         this.image = image;
         this.image.vm = this;
@@ -80,6 +80,7 @@ Object.subclass('Squeak.Interpreter',
         this.breakOutTick = 0;
         this.breakOnMethod = null; // method to break on
         this.breakOnNewMethod = false;
+        this.breakOnMessageNotUnderstood = false;
         this.breakOnContextChanged = false;
         this.breakOnContextReturned = null; // context to break on
         this.messages = {};
@@ -137,9 +138,13 @@ Object.subclass('Squeak.Interpreter',
         // compiler might decide to not handle current image
         try {
             console.log("squeak: initializing JIT compiler");
-            this.compiler = new Squeak.Compiler(this);
+            var compiler = new Squeak.Compiler(this);
+            if (compiler.compile) this.compiler = compiler;
         } catch(e) {
-            console.warn("Compiler " + e);
+            console.warn("Compiler: " + e);
+        }
+        if (!this.compiler) {
+            console.warn("SqueakJS will be running in interpreter mode only (slow)");
         }
     },
     hackImage: function() {
@@ -172,7 +177,7 @@ Object.subclass('Squeak.Interpreter',
                     else if (byte && m.bytes[byte.pc] === byte.hack) hacked = false; // already there
                     else if (lit && m.pointers[lit.index].pointers[1] === lit.old) m.pointers[lit.index].pointers[1] = lit.hack;
                     else if (lit && m.pointers[lit.index].pointers[1] === lit.hack) hacked = false; // already there
-                    else { hacked = false; console.error("Failed to hack " + each.method); }
+                    else { hacked = false; console.warn("Not hacking " + each.method); }
                     if (hacked) console.warn("Hacking " + each.method);
                 }
             } catch (error) {
@@ -585,7 +590,7 @@ Object.subclass('Squeak.Interpreter',
         if (this.frozen) return 'frozen';
         this.isIdle = false;
         this.breakOutOfInterpreter = false;
-        this.breakOutTick = this.primHandler.millisecondClockValue() + (forMilliseconds || 500);
+        this.breakAfter(forMilliseconds || 500);
         while (this.breakOutOfInterpreter === false)
             if (this.method.compiled) {
                 this.method.compiled(this);
@@ -953,6 +958,10 @@ Object.subclass('Squeak.Interpreter',
         if (selector === dnuSel) // Cannot find #doesNotUnderstand: -- unrecoverable error.
             throw Error("Recursive not understood error encountered");
         var dnuMsg = this.createActualMessage(selector, argCount, startingClass); //The argument to doesNotUnderstand:
+        if (this.breakOnMessageNotUnderstood) {
+            var receiver = this.stackValue(argCount);
+            this.breakNow("Message not understood: " + receiver + " " + startingClass.className() + ">>" + selector.bytesAsString());
+        }
         this.popNandPush(argCount, dnuMsg);
         return this.findSelectorInClass(dnuSel, 1, startingClass);
     },
@@ -980,7 +989,13 @@ Object.subclass('Squeak.Interpreter',
     executeNewMethod: function(newRcvr, newMethod, argumentCount, primitiveIndex, optClass, optSel) {
         this.sendCount++;
         if (newMethod === this.breakOnMethod) this.breakNow("executing method " + this.printMethod(newMethod, optClass, optSel));
-        if (this.logSends) console.log(this.sendCount + ' ' + this.printMethod(newMethod, optClass, optSel));
+        if (this.logSends) {
+            var indent = ' ';
+            var ctx = this.activeContext;
+            while (!ctx.isNil) { indent += '| '; ctx = ctx.pointers[Squeak.Context_sender]; }
+            var args = this.activeContext.pointers.slice(this.sp + 1 - argumentCount, this.sp + 1);
+            console.log(this.sendCount + indent + this.printMethod(newMethod, optClass, optSel, args));
+        }
         if (this.breakOnContextChanged) {
             this.breakOnContextChanged = false;
             this.breakNow();
@@ -1511,18 +1526,32 @@ Object.subclass('Squeak.Interpreter',
         return this.messages[message] ? ++this.messages[message] : this.messages[message] = 1;
     },
     warnOnce: function(message, what) {
-        if (this.addMessage(message) == 1)
+        if (this.addMessage(message) == 1) {
             console[what || "warn"](message);
+            return true;
+        }
     },
-    printMethod: function(aMethod, optContext, optSel) {
+    printMethod: function(aMethod, optContext, optSel, optArgs) {
         // return a 'class>>selector' description for the method
         if (aMethod.sqClass != this.specialObjects[Squeak.splOb_ClassCompiledMethod]) {
-          return this.printMethod(aMethod.blockOuterCode(), optContext, optSel)
+          return this.printMethod(aMethod.blockOuterCode(), optContext, optSel, optArgs)
         }
-        if (optSel) return optContext.className() + '>>' + optSel.bytesAsString();
+        var found;
+        if (optSel) {
+            var printed = optContext.className() + '>>';
+            var selector = optSel.bytesAsString();
+            if (!optArgs || !optArgs.length) printed += selector;
+            else {
+                var parts = selector.split(/(?<=:)/); // keywords
+                for (var i = 0; i < optArgs.length; i++) {
+                    if (i > 0) printed += ' ';
+                    printed += parts[i] + ' ' + optArgs[i];
+                }
+            }
+            return printed;
+        }
         // this is expensive, we have to search all classes
         if (!aMethod) aMethod = this.activeContext.contextMethod();
-        var found;
         this.allMethodsDo(function(classObj, methodObj, selectorObj) {
             if (methodObj === aMethod)
                 return found = classObj.className() + '>>' + selectorObj.bytesAsString();
@@ -1586,7 +1615,7 @@ Object.subclass('Squeak.Interpreter',
             }
         });
     },
-    printStack: function(ctx, limit) {
+    printStack: function(ctx, limit, indent) {
         // both args are optional
         if (typeof ctx == "number") {limit = ctx; ctx = null;}
         if (!ctx) ctx = this.activeContext;
@@ -1603,7 +1632,9 @@ Object.subclass('Squeak.Interpreter',
             contexts = contexts.slice(0, limit).concat(['...']).concat(contexts.slice(-extra));
         }
         var stack = [],
-            i = contexts.length;
+            i = contexts.length,
+            indents = '';
+        if (indent && this.logSends) indents = Array((""+this.sendCount).length + 2).join(' ');
         while (i-- > 0) {
             var ctx = contexts[i];
             if (!ctx.pointers) {
@@ -1617,7 +1648,10 @@ Object.subclass('Squeak.Interpreter',
                 } else if (!ctx.pointers[Squeak.Context_closure].isNil) {
                     block = '[] in '; // it's a closure activation
                 }
-                stack.push(block + this.printMethod(method, ctx) + '\n');
+                var line = block + this.printMethod(method, ctx);
+                if (indent) line = indents + line;
+                stack.push(line + '\n');
+                if (indent) indents += indent;
             }
         }
         return stack.join('');
@@ -1634,6 +1668,9 @@ Object.subclass('Squeak.Interpreter',
                     return found = methodObj;
         });
         return found;
+    },
+    breakAfter: function(ms) {
+        this.breakOutTick = this.primHandler.millisecondClockValue() + ms;
     },
     breakNow: function(msg) {
         if (msg) console.log("Break: " + msg);
@@ -1672,12 +1709,17 @@ Object.subclass('Squeak.Interpreter',
         var stackTop = homeCtx.contextSizeWithStack(this) - 1;
         var firstTemp = stackBottom + 1;
         var lastTemp = firstTemp + tempCount - 1;
+        var lastArg = firstTemp + homeCtx.pointers[Squeak.Context_method].methodNumArgs() - 1;
         var stack = '';
         for (var i = stackBottom; i <= stackTop; i++) {
             var value = printObj(homeCtx.pointers[i]);
             var label = '';
-            if (i == stackBottom) label = '=rcvr'; else
-            if (i <= lastTemp) label = '=tmp' + (i - firstTemp);
+            if (i === stackBottom) {
+                label = '=rcvr';
+            } else {
+                if (i <= lastTemp) label = '=tmp' + (i - firstTemp);
+                if (i <= lastArg) label += '/arg' + (i - firstTemp);
+            }
             stack += '\nctx[' + i + ']' + label +': ' + value;
         }
         if (isBlock) {
@@ -1686,10 +1728,11 @@ Object.subclass('Squeak.Interpreter',
             var firstArg = this.decodeSqueakSP(1);
             var lastArg = firstArg + nArgs;
             var sp = ctx === this.activeContext ? this.sp : ctx.pointers[Squeak.Context_stackPointer];
+            if (sp < firstArg) stack += '\nblk <stack empty>';
             for (var i = firstArg; i <= sp; i++) {
                 var value = printObj(ctx.pointers[i]);
                 var label = '';
-                if (i <= lastArg) label = '=arg' + (i - firstArg);
+                if (i < lastArg) label = '=arg' + (i - firstArg);
                 stack += '\nblk[' + i + ']' + label +': ' + value;
             }
         }
@@ -1704,39 +1747,62 @@ Object.subclass('Squeak.Interpreter',
         // print active process
         var activeProc = sched.pointers[Squeak.ProcSched_activeProcess],
             result = "Active: " + this.printProcess(activeProc, true);
-        // print other runnable processes
+        // print other runnable processes in order of priority
         var lists = sched.pointers[Squeak.ProcSched_processLists].pointers;
         for (var priority = lists.length - 1; priority >= 0; priority--) {
             var process = lists[priority].pointers[Squeak.LinkedList_firstLink];
             while (!process.isNil) {
+                result += "\n------------------------------------------";
                 result += "\nRunnable: " + this.printProcess(process);
                 process = process.pointers[Squeak.Link_nextLink];
             }
         }
-        // print all processes waiting on a semaphore
+        // print all processes waiting on a semaphore in order of priority
         var semaClass = this.specialObjects[Squeak.splOb_ClassSemaphore],
-            sema = this.image.someInstanceOf(semaClass);
+            sema = this.image.someInstanceOf(semaClass),
+            waiting = [];
         while (sema) {
             var process = sema.pointers[Squeak.LinkedList_firstLink];
             while (!process.isNil) {
-                result += "\nWaiting: " + this.printProcess(process);
+                waiting.push(process);
                 process = process.pointers[Squeak.Link_nextLink];
             }
             sema = this.image.nextInstanceAfter(sema);
         }
+        waiting.sort(function(a, b){
+            return b.pointers[Squeak.Proc_priority] - a.pointers[Squeak.Proc_priority];
+        });
+        for (var i = 0; i < waiting.length; i++) {
+            result += "\n------------------------------------------";
+            result += "\nWaiting: " + this.printProcess(waiting[i]);
+        }
         return result;
     },
-    printProcess: function(process, active) {
-        var context = process.pointers[Squeak.Proc_suspendedContext],
+    printProcess: function(process, active, indent) {
+        if (!process) {
+            var schedAssn = this.specialObjects[Squeak.splOb_SchedulerAssociation],
+            sched = schedAssn.pointers[Squeak.Assn_value];
+            process = sched.pointers[Squeak.ProcSched_activeProcess],
+            active = true;
+        }
+        var context = active ? this.activeContext : process.pointers[Squeak.Proc_suspendedContext],
             priority = process.pointers[Squeak.Proc_priority],
-            stack = this.printStack(active ? null : context),
-            values = this.printContext(context);
-        return process.toString() +" at priority " + priority + "\n" + stack + values + "\n";
+            stack = this.printStack(context, 20, indent),
+            values = indent && this.logSends ? "" : this.printContext(context) + "\n";
+        return process.toString() +" at priority " + priority + "\n" + stack + values;
     },
     printByteCodes: function(aMethod, optionalIndent, optionalHighlight, optionalPC) {
         if (!aMethod) aMethod = this.method;
         var printer = new Squeak.InstructionPrinter(aMethod, this);
         return printer.printInstructions(optionalIndent, optionalHighlight, optionalPC);
+    },
+    logStack: function() {
+        // useful for debugging interactively:
+        // SqueakJS.vm.logStack()
+        console.log(this.printStack()
+            + this.printActiveContext() + '\n\n'
+            + this.printByteCodes(this.method, '   ', '=> ', this.pc),
+            this.activeContext.pointers.slice(0, this.sp + 1));
     },
     willSendOrReturn: function() {
         // Answer whether the next bytecode corresponds to a Smalltalk

@@ -466,6 +466,9 @@ Object.subclass('Squeak.Image',
         // sorting them by id, and then linking them into old space.
         this.vm.addMessage("fullGC: " + reason);
         var start = Date.now();
+        var previousNew = this.newSpaceCount;
+        var previousYoung = this.youngSpaceCount;
+        var previousOld = this.oldSpaceCount;
         var newObjects = this.markReachableObjects();
         this.removeUnmarkedOldObjects();
         this.appendToOldObjects(newObjects);
@@ -476,8 +479,12 @@ Object.subclass('Squeak.Image',
         this.hasNewInstances = {};
         this.gcCount++;
         this.gcMilliseconds += Date.now() - start;
-        console.log("Full GC (" + reason + "): " + (Date.now() - start) + " ms");
-        if (reason === "primitive") console.log("  surviving objects: " + this.oldSpaceCount + " (" + this.oldSpaceBytes + " bytes)");
+        var delta = previousOld - this.oldSpaceCount;
+        console.log("Full GC (" + reason + "): " + (Date.now() - start) + " ms, " +
+            "surviving objects: " + this.oldSpaceCount + " (" + this.oldSpaceBytes + " bytes), " +
+            "tenured " + newObjects.length + " (total " + (delta > 0 ? "+" : "") + delta + "), " +
+            "gc'ed " + previousYoung + " young and " + (previousNew - previousYoung) + " new objects");
+
         return newObjects.length > 0 ? newObjects[0] : null;
     },
     gcRoots: function() {
@@ -627,6 +634,7 @@ Object.subclass('Squeak.Image',
         // and finalize weak refs
         this.vm.addMessage("partialGC: " + reason);
         var start = Date.now();
+        var previous = this.newSpaceCount;
         var young = this.findYoungObjects();
         this.appendToYoungSpace(young);
         this.finalizeWeakReferences();
@@ -636,7 +644,9 @@ Object.subclass('Squeak.Image',
         this.newSpaceCount = this.youngSpaceCount;
         this.pgcCount++;
         this.pgcMilliseconds += Date.now() - start;
-        console.log("Partial GC (" + reason+ "): " + (Date.now() - start) + " ms");
+        console.log("Partial GC (" + reason+ "): " + (Date.now() - start) + " ms, " +
+            "found " + this.youngRootsCount + " roots in " + this.oldSpaceCount + " old, " +
+            "kept " + this.youngSpaceCount + " young (" + (previous - this.youngSpaceCount) + " gc'ed)");
         return young[0];
     },
     youngRoots: function() {
@@ -665,6 +675,7 @@ Object.subclass('Squeak.Image',
         // PartialGC: find new objects transitively reachable from old objects
         var todo = this.youngRoots(),     // direct pointers from old space
             newObjects = [];
+        this.youngRootsCount = todo.length;
         this.weakObjects = [];
         while (todo.length > 0) {
             var object = todo.pop();
