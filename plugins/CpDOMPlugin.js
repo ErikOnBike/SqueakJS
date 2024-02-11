@@ -31,34 +31,6 @@ function CpDOMPlugin() {
       return true;
     },
 
-    // Helper method for running a process uninterrupted
-    runUninterrupted: function(process, endTime) {
-      if(!process || process.isNil) {
-        return;
-      }
-
-      // Run the specified process until the process goes
-      // to sleep again or the end time is reached.
-      // This 'runner' assumes the process runs 'quickly'.
-      var primHandler = this.primHandler;
-      primHandler.resume(process);
-      var scheduler = primHandler.getScheduler();
-      var vm = primHandler.vm;
-      do {
-        if(vm.method.compiled) {
-          vm.method.compiled(vm);
-        } else {
-          vm.interpretOne();
-        }
-      } while(process === scheduler.pointers[Squeak.ProcSched_activeProcess] && (endTime === undefined || performance.now() < endTime));
-
-      // If process did not finish in time, put it to sleep
-      if(process === scheduler.pointers[Squeak.ProcSched_activeProcess]) {
-//console.warn("Process put to sleep because it did not finish in time: " + (process === this.transitionProcess ? "transition" : process === this.eventHandlerProcess ? "process" : "unknown"));
-        primHandler.putToSleep(process);
-      }
-    },
-
     // Helper methods for answering (and setting the stack correctly)
     answer: function(argCount, value) {
       this.interpreterProxy.popthenPush(argCount + 1, this.primHandler.makeStObject(value));
@@ -69,6 +41,8 @@ function CpDOMPlugin() {
       this.interpreterProxy.pop(argCount);
       return true;
     },
+
+    // Helper methods for creating or converting Smalltalk and JavaScript objects
     updateMakeStObject: function() {
       // Replace existing makeStObject function with more elaborate variant
       if(this.originalMakeStObject) {
@@ -76,14 +50,14 @@ function CpDOMPlugin() {
       }
       var self = this;
       self.originalMakeStObject = this.primHandler.makeStObject;
-      this.primHandler.makeStObject = function(obj, proxyClass) {
+      this.primHandler.makeStObject = function(obj, proxyClass, seen) {
         if(obj !== undefined && obj !== null) {
-          // Check for DOM element
+          // Check for DOM element (it will use own internal wrapping, do not use 'seen' here)
           if(obj.querySelectorAll) {
             return self.instanceForElement(obj);
           }
         }
-        return self.originalMakeStObject.call(this, obj, proxyClass);
+        return self.originalMakeStObject.call(this, obj, proxyClass, seen);
       };
       // Make sure document has a localName
       window.document.localName = "document";
@@ -503,7 +477,7 @@ function CpDOMPlugin() {
       if(argCount !== 2) return false;
       var propertyName = this.interpreterProxy.stackValue(1).asString();
       if(!propertyName) return false;
-      var propertyValue = this.systemPlugin.asJavascriptObject(this.interpreterProxy.stackValue(0));
+      var propertyValue = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0));
       var domElement = this.interpreterProxy.stackValue(argCount).domElement;
       if(!domElement) return false;
       domElement[propertyName] = propertyValue;
@@ -602,24 +576,16 @@ function CpDOMPlugin() {
       if(!domElement) return false;
       var functionName = this.interpreterProxy.stackValue(1).asString();
       if(!functionName) return false;
-      var functionArguments = this.systemPlugin.asJavascriptObject(this.interpreterProxy.stackValue(0));
-      // Evaluate function in separate event cycle, preventing possible event to be generated outside the
-      // Smalltalk execution thread. Sending #focus for example would synchronously execute the #focusin
-      // event, which would get executed before this primitive is finished. It will leave the VM stack
-      // unbalanced.
-      window.setTimeout(function() { domElement[functionName].apply(domElement, functionArguments); }, 0);
-      return this.answerSelf(argCount);
-    },
-    "primitiveDomElementSyncApply:withArguments:": function(argCount) {
-      if(argCount !== 2) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
-      if(!domElement) return false;
-      var functionName = this.interpreterProxy.stackValue(1).asString();
-      if(!functionName) return false;
-      var functionArguments = this.systemPlugin.asJavascriptObject(this.interpreterProxy.stackValue(0));
-      // This is the 'unsafe' variant of primitiveDomElementApply. See the comment there. Use with care.
-      // This variant is useful for performing getters.
-      return this.answer(argCount, domElement[functionName].apply(domElement, functionArguments));
+      var functionArguments = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0)) || [];
+      var func = domElement[functionName];
+      if(!func || !func.apply) return false;
+      var result = undefined;
+      try {
+        result = func.apply(domElement, functionArguments);
+      } catch(e) {
+        console.error("Failed to perform apply:withArguments on global object:", e, "Selector:", functionName, "Arguments:", functionArguments);
+      }
+      return this.answer(argCount, result);
     },
 
     // HTMLElement class methods
@@ -908,10 +874,16 @@ function CpDOMPlugin() {
       });
     },
     handleEvents: function() {
-      if(this.eventHandlerProcess && this.eventsReceived.length > 0) {
+      // The event handler process is non-reentrant, check if it is already running and needs running
+      if(this.eventHandlerProcess && !this.eventHandlerProcess.isRunning && this.eventsReceived.length > 0) {
 //var start = null;
 //if(window.sessionStorage.getItem("DEBUG")) start = performance.now();
-        this.runUninterrupted(this.eventHandlerProcess);
+        try {
+          this.eventHandlerProcess.isRunning = true;
+          this.systemPlugin.runUninterrupted(this.eventHandlerProcess);
+        } finally {
+          this.eventHandlerProcess.isRunning = false;
+        }
 //if(start !== null) console.log("Event handler took " + (performance.now() - start) + "ms");
       }
     },
@@ -1122,7 +1094,7 @@ function CpDOMPlugin() {
     // CustomEvent instance methods
     "primitiveCustomEventCreateWithDetail:": function(argCount) {
       if(argCount !== 1) return false;
-      var detail = this.systemPlugin.asJavascriptObject(this.interpreterProxy.stackValue(0));
+      var detail = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0));
       var receiver = this.interpreterProxy.stackValue(argCount);
       if(receiver.event) return false; // Already created!
       var type = receiver.sqClass.type;
@@ -1152,7 +1124,7 @@ function CpDOMPlugin() {
       return this.answer(argCount, Math.ceil(performance.now() - this.transitionStartTick));
     },
     handleTransitions: function(endTime) {
-      this.runUninterrupted(this.transitionProcess, endTime);
+      this.systemPlugin.runUninterrupted(this.transitionProcess, endTime);
     }
   };
 }
