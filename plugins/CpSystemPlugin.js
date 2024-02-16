@@ -824,6 +824,24 @@ function CpSystemPlugin() {
       }
       return this.answer(argCount, result);
     },
+    "primitiveJavaScriptObjectPropertyAt:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var obj = receiver.jsObj;
+      if(obj === undefined) return false;
+      var propertyName = this.interpreterProxy.stackValue(0).asString();
+      return this.answer(argCount, obj[propertyName]);
+    },
+    "primitiveJavaScriptObjectPropertyAt:put:": function(argCount) {
+      if(argCount !== 2) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var obj = receiver.jsObj;
+      if(obj === undefined) return false;
+      var propertyName = this.interpreterProxy.stackValue(1).asString();
+      var propertyValue = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+      obj[propertyName] = propertyValue;
+      return this.answerSelf(argCount);
+    },
     "primitiveJavaScriptObjectGetSelectorNames": function(argCount) {
       if(argCount !== 0) return false;
       var obj = this.interpreterProxy.stackValue(argCount).jsObj;
@@ -907,7 +925,6 @@ function CpSystemPlugin() {
     // JavaScriptClass instance methods
     "primitiveJavaScriptClassNewInstanceWithArguments:resultAs:": function(argCount) {
       if(argCount !== 2) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount).jsObj;
       var jsClass = this.interpreterProxy.stackValue(argCount).jsObj;
       var args = this.asJavaScriptObject(this.interpreterProxy.stackValue(1)) || [];
       var proxyClass = this.interpreterProxy.stackValue(0);
