@@ -666,7 +666,7 @@ Object.subclass('Squeak.Image',
                         dirty = true;
                     }
                 }
-                object.dirty = dirty;
+                if (!dirty) object.dirty = false;
             }
             object = object.nextObject;
         }
@@ -1063,6 +1063,10 @@ Object.subclass('Squeak.Image',
         // between segmentWordArray and its following object (endMarker).
         // This only increases oldSpaceCount but not oldSpaceBytes.
         // The code below is almost the same as readFromBuffer() ... should unify
+        if (segmentWordArray.words.length === 1) {
+            // segment already loaded
+            return segmentWordArray.nextObject;
+        }
         var segment = new DataView(segmentWordArray.words.buffer),
             littleEndian = false,
             nativeFloats = false,
@@ -1149,6 +1153,7 @@ Object.subclass('Squeak.Image',
                 oopMap[--fakeClsOop] = cls; return fakeClsOop; });
         // truncate segmentWordArray array to one element
         segmentWordArray.words = new Uint32Array([segmentWordArray.words[0]]);
+        delete segmentWordArray.uint8Array; // in case it was a view onto words
         // map objects using oopMap
         var roots = segmentWordArray.nextObject,
             floatClass = this.specialObjectsArray.pointers[Squeak.splOb_ClassFloat],

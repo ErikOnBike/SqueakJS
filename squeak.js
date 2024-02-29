@@ -177,7 +177,7 @@ function setupSwapButtons(options) {
 function recordModifiers(evt, display) {
     var shiftPressed = evt.shiftKey,
         ctrlPressed = evt.ctrlKey && !evt.altKey,
-        cmdPressed = evt.metaKey || (evt.altKey && !evt.ctrlKey),
+        cmdPressed = display.isMac ? evt.metaKey : evt.altKey && !evt.ctrlKey,
         modifiers =
             (shiftPressed ? Squeak.Keyboard_Shift : 0) +
             (ctrlPressed ? Squeak.Keyboard_Ctrl : 0) +
@@ -246,29 +246,53 @@ function recordMouseEvent(what, evt, canvas, display, options) {
     }
 }
 
-function recordKeyboardEvent(key, timestamp, display) {
+// Squeak traditional keycodes are MacRoman
+var MacRomanToUnicode = [
+    0x00C4, 0x00C5, 0x00C7, 0x00C9, 0x00D1, 0x00D6, 0x00DC, 0x00E1,
+    0x00E0, 0x00E2, 0x00E4, 0x00E3, 0x00E5, 0x00E7, 0x00E9, 0x00E8,
+    0x00EA, 0x00EB, 0x00ED, 0x00EC, 0x00EE, 0x00EF, 0x00F1, 0x00F3,
+    0x00F2, 0x00F4, 0x00F6, 0x00F5, 0x00FA, 0x00F9, 0x00FB, 0x00FC,
+    0x2020, 0x00B0, 0x00A2, 0x00A3, 0x00A7, 0x2022, 0x00B6, 0x00DF,
+    0x00AE, 0x00A9, 0x2122, 0x00B4, 0x00A8, 0x2260, 0x00C6, 0x00D8,
+    0x221E, 0x00B1, 0x2264, 0x2265, 0x00A5, 0x00B5, 0x2202, 0x2211,
+    0x220F, 0x03C0, 0x222B, 0x00AA, 0x00BA, 0x03A9, 0x00E6, 0x00F8,
+    0x00BF, 0x00A1, 0x00AC, 0x221A, 0x0192, 0x2248, 0x2206, 0x00AB,
+    0x00BB, 0x2026, 0x00A0, 0x00C0, 0x00C3, 0x00D5, 0x0152, 0x0153,
+    0x2013, 0x2014, 0x201C, 0x201D, 0x2018, 0x2019, 0x00F7, 0x25CA,
+    0x00FF, 0x0178, 0x2044, 0x20AC, 0x2039, 0x203A, 0xFB01, 0xFB02,
+    0x2021, 0x00B7, 0x201A, 0x201E, 0x2030, 0x00C2, 0x00CA, 0x00C1,
+    0x00CB, 0x00C8, 0x00CD, 0x00CE, 0x00CF, 0x00CC, 0x00D3, 0x00D4,
+    0xF8FF, 0x00D2, 0x00DA, 0x00DB, 0x00D9, 0x0131, 0x02C6, 0x02DC,
+    0x00AF, 0x02D8, 0x02D9, 0x02DA, 0x00B8, 0x02DD, 0x02DB, 0x02C7,
+];
+var UnicodeToMacRoman = {};
+for (var i = 0; i < MacRomanToUnicode.length; i++)
+    UnicodeToMacRoman[MacRomanToUnicode[i]] = i + 128;
+
+function recordKeyboardEvent(unicode, timestamp, display) {
     if (!display.vm) return;
-    var code = (display.buttons >> 3) << 8 | key;
+    var macCode = UnicodeToMacRoman[unicode] || (unicode < 128 ? unicode : 0);
+    var modifiersAndKey = (display.buttons >> 3) << 8 | macCode;
     if (display.eventQueue) {
         display.eventQueue.push([
             Squeak.EventTypeKeyboard,
             timestamp,  // converted to Squeak time in makeSqueakEvent()
-            key, // MacRoman
+            macCode, // MacRoman
             Squeak.EventKeyChar,
             display.buttons >> 3,
-            key,  // Unicode
+            unicode,  // Unicode
         ]);
         if (display.signalInputEvent)
             display.signalInputEvent();
         // There are some old images that use both event-based
         // and polling primitives. To make those work, keep the
         // last key event
-        display.keys[0] = code;
-    } else if (code === display.vm.interruptKeycode) {
+        display.keys[0] = modifiersAndKey;
+    } else if (modifiersAndKey === display.vm.interruptKeycode) {
         display.vm.interruptPending = true;
     } else {
         // no event queue, queue keys the old-fashioned way
-        display.keys.push(code);
+        display.keys.push(modifiersAndKey);
     }
     display.idle = 0;
     if (display.runNow) display.runNow(); // don't wait for timeout to run
@@ -384,6 +408,9 @@ function createSqueakDisplay(canvas, options) {
     };
     display.clear = function() {
         canvas.width = canvas.width;
+    };
+    display.setTitle = function(title) {
+        document.title = title;
     };
     display.showBanner = function(msg, style) {
         style = style || {};
@@ -686,18 +713,58 @@ function createSqueakDisplay(canvas, options) {
         canvas.style.cursor = "none";
     }
     // keyboard stuff
-    document.onkeypress = function(evt) {
+    var input = document.createElement("input");
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("autocorrect", "off");
+    input.setAttribute("autocapitalize", "off");
+    input.setAttribute("spellcheck", "false");
+    input.style.position = "absolute";
+    input.style.width = "0";
+    input.style.height = "0";
+    input.style.opacity = "0";
+    input.style.pointerEvents = "none";
+    canvas.parentElement.appendChild(input);
+    input.focus();
+    input.onblur = function() { input.focus(); };
+    display.isMac = navigator.userAgent.includes("Mac");
+    // emulate keypress events
+    var deadKey = false, // true if last keydown was a dead key
+        deadChars = [];
+    input.oninput = function(evt) {
         if (!display.vm) return true;
-        // check for ctrl-x/c/v/r
-        if (/[CXVR]/.test(String.fromCharCode(evt.charCode + 64)))
-            return true;  // let browser handle cut/copy/paste/reload
-        recordModifiers(evt, display);
-        recordKeyboardEvent(evt.charCode, evt.timeStamp, display);
-        evt.preventDefault();
+        if (evt.inputType === "insertText"                // regular key, or Chrome
+            || evt.inputType === "insertCompositionText"  // Firefox, Chrome
+            || evt.inputType === "insertFromComposition") // Safari
+        {
+            // generate backspace to delete inserted dead chars
+            var hadDeadChars = deadChars.length > 0;
+            if (hadDeadChars) {
+                var oldButtons = display.buttons;
+                display.buttons &= ~Squeak.Keyboard_All;  // remove all modifiers
+                for (var i = 0; i < deadChars.length; i++) {
+                    recordKeyboardEvent(8, evt.timeStamp, display);
+                }
+                display.buttons = oldButtons;
+                deadChars = [];
+            }
+            // generate keyboard events for each character
+            // single input could be many characters, e.g. for emoji
+            var chars = Array.from(evt.data); // split by surrogate pairs
+            for (var i = 0; i < chars.length; i++) {
+                var unicode = chars[i].codePointAt(0); // codePointAt combines pair into unicode
+                recordKeyboardEvent(unicode, evt.timeStamp, display);
+            }
+            if (!hadDeadChars && evt.isComposing && evt.inputType === "insertCompositionText") {
+                deadChars = deadChars.concat(chars);
+            }
+        }
+        if (!deadChars.length) input.value = "";  // clear input
     };
-    document.onkeydown = function(evt) {
+    input.onkeydown = function(evt) {
         checkFullscreen();
         if (!display.vm) return true;
+        deadKey = evt.key === "Dead";
+        if (deadKey) return;  // let browser handle dead keys
         recordModifiers(evt, display);
         var squeakCode = ({
             8: 8,   // Backspace
@@ -720,40 +787,57 @@ function createSqueakDisplay(canvas, options) {
             recordKeyboardEvent(squeakCode, evt.timeStamp, display);
             return evt.preventDefault();
         }
-        if ((evt.metaKey || (evt.altKey && !evt.ctrlKey))) {
-            var key = evt.key; // only supported in FireFox, others have keyIdentifier
-            if (!key && evt.keyIdentifier && evt.keyIdentifier.slice(0,2) == 'U+')
-                key = String.fromCharCode(parseInt(evt.keyIdentifier.slice(2), 16));
-            if (key && key.length == 1) {
-                if (/[CXVR]/i.test(key))
-                    return true;  // let browser handle cut/copy/paste/reload
-                var code = key.charCodeAt(0);
-                if (/[A-Z]/.test(key) && !evt.shiftKey) code += 32;  // make lower-case
-                recordKeyboardEvent(code, evt.timeStamp, display);
-                return evt.preventDefault();
+        // copy/paste new-style
+        if (navigator.clipboard && (display.isMac ? evt.metaKey : evt.ctrlKey)) {
+            switch (evt.key) {
+                case "c":
+                case "x":
+                    var text = display.executeClipboardCopy(evt.key, evt.timeStamp);
+                    if (typeof text === 'string') {
+                        navigator.clipboard.writeText(text)
+                            .catch(function(err) { console.error("display: copy error " + err.message); });
+                    }
+                    return evt.preventDefault();
+                case "v":
+                    navigator.clipboard.readText()
+                        .then(function(text) {
+                            display.executeClipboardPaste(text, evt.timeStamp);
+                        })
+                        .catch(function(err) { console.error("display: paste error " + err.message); });
+                    return evt.preventDefault();
             }
         }
+        if (evt.key.length !== 1) return; // let browser handle other keys
+        if (display.buttons & (Squeak.Keyboard_Cmd | Squeak.Keyboard_Ctrl)) {
+            var code = evt.key.toLowerCase().charCodeAt(0);
+            if ((display.buttons & Squeak.Keyboard_Ctrl) && code >= 96 && code < 127) code &= 0x1F; // ctrl-<key>
+            recordKeyboardEvent(code, evt.timeStamp, display);
+            return evt.preventDefault();
+        }
     };
-    document.onkeyup = function(evt) {
+    input.onkeyup = function(evt) {
         if (!display.vm) return true;
         recordModifiers(evt, display);
     };
-    document.oncopy = function(evt, key) {
-        var text = display.executeClipboardCopy(key, evt.timeStamp);
-        if (typeof text === 'string') {
-            evt.clipboardData.setData("Text", text);
-        }
-        evt.preventDefault();
-    };
-    document.oncut = function(evt) {
-        if (!display.vm) return true;
-        document.oncopy(evt, 'x');
-    };
-    document.onpaste = function(evt) {
-        var text = evt.clipboardData.getData('Text');
-        display.executeClipboardPaste(text, evt.timeStamp);
-        evt.preventDefault();
-    };
+    // copy/paste old-style
+    if (!navigator.clipboard) {
+        document.oncopy = function(evt, key) {
+            var text = display.executeClipboardCopy(key, evt.timeStamp);
+            if (typeof text === 'string') {
+                evt.clipboardData.setData("Text", text);
+            }
+            evt.preventDefault();
+        };
+        document.oncut = function(evt) {
+            if (!display.vm) return true;
+            document.oncopy(evt, 'x');
+        };
+        document.onpaste = function(evt) {
+            var text = evt.clipboardData.getData('Text');
+            display.executeClipboardPaste(text, evt.timeStamp);
+            evt.preventDefault();
+        };
+    }
     // touch keyboard button
     if ('ontouchstart' in document) {
         var keyboardButton = document.createElement('div');
@@ -766,7 +850,7 @@ function createSqueakDisplay(canvas, options) {
             canvas.setAttribute('autocorrect', 'off');
             canvas.setAttribute('autocapitalize', 'off');
             canvas.setAttribute('spellcheck', 'off');
-            canvas.focus();
+            input.focus();
             evt.preventDefault();
         }
         keyboardButton.ontouchstart = keyboardButton.onmousedown
@@ -955,7 +1039,6 @@ SqueakJS.runImage = function(buffer, name, display, options) {
     display.clear();
     display.showBanner("Loading " + SqueakJS.appName);
     display.showProgress(0);
-    var self = this;
     window.setTimeout(function readImageAsync() {
         var image = new Squeak.Image(name);
         image.readFromBuffer(buffer, function startRunning() {
@@ -969,7 +1052,7 @@ SqueakJS.runImage = function(buffer, name, display, options) {
             var spinner = setupSpinner(vm, options);
             function run() {
                 try {
-                    if (display.quitFlag) self.onQuit(vm, display, options);
+                    if (display.quitFlag) SqueakJS.onQuit(vm, display, options);
                     else vm.interpret(50, function runAgain(ms) {
                         if (ms == "sleep") ms = 200;
                         if (spinner) updateSpinner(spinner, ms, vm, display);
@@ -991,6 +1074,7 @@ SqueakJS.runImage = function(buffer, name, display, options) {
                     display.runNow();
                 } while (Date.now() < stoptime);
             };
+            if (options.onStart) options.onStart(vm, display, options);
             run();
         },
         function readProgress(value) {display.showProgress(value);});

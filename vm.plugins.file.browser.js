@@ -182,6 +182,7 @@ Object.extend(Squeak.Primitives.prototype,
             count = Math.min(count, file.size - handle.filePos);
             for (var i = 0; i < count; i++)
                 dstArray[startIndex + i] = srcArray[handle.filePos++];
+            if (!arrayObj.bytes) count >>= 2;  // words
             this.popNandPushIfOK(argCount+1, Math.max(0, count));
         }.bind(this));
     },
@@ -266,6 +267,7 @@ Object.extend(Squeak.Primitives.prototype,
                 dstArray[handle.filePos++] = srcArray[startIndex + i];
             if (handle.filePos > file.size) file.size = handle.filePos;
             file.modified = true;
+            if (!arrayObj.bytes) count >>= 2;  // words
             this.popNandPushIfOK(argCount+1, count);
         }.bind(this));
     },
