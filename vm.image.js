@@ -134,6 +134,7 @@ Object.subclass('Squeak.Image',
         var is64Bit = version >= 68000;
         if (is64Bit && !this.isSpur) throw Error("64 bit non-spur images not supported yet");
         if (is64Bit)  { readWord = readWord64; wordSize = 8; }
+        this.is64Bit = is64Bit;
         console.log(`squeak: Image Spur: ${this.isSpur} is64Bit: ${is64Bit} hasClosures: ${this.hasClosures} version: ${version}`);
         // parse image header
         var imageHeaderSize = readWord32(); // always 32 bits
