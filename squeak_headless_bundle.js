@@ -118,7 +118,7 @@
         // system attributes
         vmVersion: "SqueakJS 1.1.2",
         vmDate: "2024-01-28",               // Maybe replace at build time?
-        vmBuild: "20240216",                 // or replace at runtime by last-modified?
+        vmBuild: "20240229",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -1484,6 +1484,7 @@
             var is64Bit = version >= 68000;
             if (is64Bit && !this.isSpur) throw Error("64 bit non-spur images not supported yet");
             if (is64Bit)  { readWord = readWord64; wordSize = 8; }
+            this.is64Bit = is64Bit;
             console.log(`squeak: Image Spur: ${this.isSpur} is64Bit: ${is64Bit} hasClosures: ${this.hasClosures} version: ${version}`);
             // parse image header
             var imageHeaderSize = readWord32(); // always 32 bits
@@ -11063,9 +11064,29 @@
 
         // Helper method to create a global scope (working similarly in Browser and in NodeJS)
         setupGlobalObject: function() {
-          // For Browser environment create a global object named 'global'
           if(typeof window !== 'undefined' && !window.global) {
+            // For Browser environment create a global object named 'global'.
             window.global = window;
+          } else {
+            // For Node.js make 'require' an actual global function and replace constructor to prevent
+            // it from being characterized as a Dictionary (when processing in makeStObject).
+            global.require = function(name) {
+              var module = require(name);
+              Object.keys(module).forEach(function(key) {
+                // Check for classes (not 100% check, okay if we give to many objects an internal property)
+                // See also:
+                // https://stackoverflow.com/questions/40922531/how-to-check-if-a-javascript-function-is-a-constructor
+                // Assume classes have uppercase first character
+                if(key[0] >= "A" && key[0] <= "Z") {
+                  var value = module[key];
+                  if(value && value.constructor && value.prototype && value === value.prototype.constructor) {
+                    value.__cp_className = name + "." + key;
+                  }
+                }
+              });
+              return module;
+            };
+            global.constructor = function() {};
           }
 
           // Create global function to let objects 'identify' themselves (used for Proxy-ing JavaScript objects).
@@ -11139,6 +11160,12 @@
 
         updateMakeStObject: function() {
           var thisHandle = this;
+
+          // Keep track of SmallInteger min and max value.
+          // 64-bit images have 61-bit SmallIntegers, 32-bit images have 31-bit SmallIntegers.
+          // Since JavaScript only supports 53-bits integers, use that max in 64-bit images.
+          this.minSmallInteger = this.interpreterProxy.vm.image.is64Bit ? Number.MIN_SAFE_INTEGER : -0x40000000;
+          this.maxSmallInteger = this.interpreterProxy.vm.image.is64Bit ? Number.MAX_SAFE_INTEGER :  0x3FFFFFFF;
           this.primHandler.makeStObject = function(obj, proxyClass, seen) {
             // Check for special 'primitive' objects (no need to use 'seen' here)
             if(obj === undefined || obj === null) return this.vm.nilObj;
@@ -11147,7 +11174,31 @@
             if(obj.sqClass) return obj;
             if(obj.constructor === Number) {
               if(obj === (obj|0)) {
-                return this.makeLargeIfNeeded(obj);
+                // Using bitwise-operators only works on 32-bits integers, therefore use regular division
+                // instead of bit-shifts below during conversion to LargeIntegers.
+                // The code below only works for 32-bit images. On 64-bit images, this code will not get
+                // executed because obj will have "BigInt" as constructor and not "Number" if it becomes
+                // bigger than maxSmallInteger.
+                if(obj > thisHandle.maxSmallInteger || obj < thisHandle.minSmallInteger) {
+                  var isNegative = obj < 0;
+                  if(isNegative) {
+                    // Assume (see above) we're on 32-bit image, so the statement below will not overflow
+                    // the max (primitive) integer value.
+                    obj = -obj;
+                  }
+                  var bytes = [];
+                  var i = 0;
+                  while(obj > 0) {
+                    var byte = obj & 0xff;
+                    bytes[i++] = byte;
+                    obj = (obj - byte) / 256;
+                  }
+                  var largeInteger = this.vm.instantiateClass(this.vm.specialObjects[isNegative ? Squeak.splOb_ClassLargeNegativeInteger : Squeak.splOb_ClassLargePositiveInteger], bytes.length);
+                  largeInteger.bytes = bytes;
+                  return largeInteger;
+                } else {
+                  return obj;
+                }
               } else {
                 return this.makeFloat(obj);
               }
@@ -11185,7 +11236,7 @@
               }
             }
 
-            // Dictionary like objects
+            // Dictionary like objects (make exception for the global object)
             if((obj.constructor === Object && !thisHandle.hasFunctions(obj)) || (obj.constructor === undefined && typeof obj === "object")) {
               return thisHandle.makeStDictionary(obj, seen);
             }
@@ -11764,7 +11815,8 @@
 
             // Find Proxy Class for the specified JavaScript object (only exact match)
             proxyClassName = proxyClassNames.find(function(name) {
-              return global[name] === jsClass;
+              // Either the actual class has received explicit class name or it is found in the global object
+              return jsClass.__cp_className === name || global[name] === jsClass;
             });
 
             // Try the superclass
