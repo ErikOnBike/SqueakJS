@@ -5799,8 +5799,9 @@ function requireVm_interpreter () {
 	            // Squeak 5.3 disable wizard by replacing #open send with pop
 	            {method: "ReleaseBuilder class>>prepareEnvironment", bytecode: {pc: 28, old: 0xD8, hack: 0x87}, enabled: opts.includes("wizard=false")},
 	            // Squeak source file should use UTF8 not MacRoman (both V3 and Sista)
-	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 38, old: 0x16, hack: 0x13}, enabled: sista},
-	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 50, old: 0x44, hack: 0x48}, enabled: !sista},
+	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 53, old: 0x45, hack: 0x49}, enabled: !this.image.isSpur},
+	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 38, old: 0x16, hack: 0x13}, enabled: this.image.isSpur && sista},
+	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 50, old: 0x44, hack: 0x48}, enabled: this.image.isSpur && !sista},
 	        ].forEach(function(each) {
 	            try {
 	                var m = each.enabled && this.findMethod(each.method);
@@ -7130,16 +7131,21 @@ function requireVm_interpreter () {
 	        return rcvr - Math.floor(rcvr/arg) * arg;
 	    },
 	    safeShift: function(smallInt, shiftCount) {
-	         // JS shifts only up to 31 bits
+	        // must only be used if smallInt is actually a SmallInt!
+	        // the logic is complex because JS shifts only up to 31 bits
+	        // and treats e.g. 1<<32 as 1<<0, so we have to do our own checks
 	        if (shiftCount < 0) {
 	            if (shiftCount < -31) return smallInt < 0 ? -1 : 0;
+	            // this would wrongly return a negative result if
+	            // smallInt >= 0x80000000, but the largest smallInt
+	            // is 0x3FFFFFFF so we're ok
 	            return smallInt >> -shiftCount; // OK to lose bits shifting right
 	        }
-	        if (shiftCount > 31) return smallInt == 0 ? 0 : Squeak.NonSmallInt;
-	        // check for lost bits by seeing if computation is reversible
+	        if (shiftCount > 31) return smallInt === 0 ? 0 : Squeak.NonSmallInt;
 	        var shifted = smallInt << shiftCount;
-	        if  ((shifted>>shiftCount) === smallInt) return shifted;
-	        return Squeak.NonSmallInt;  //non-small result will cause failure
+	        // check for lost bits by seeing if computation is reversible
+	        if ((shifted>>shiftCount) !== smallInt) return Squeak.NonSmallInt; // fail
+	        return shifted; // caller will check if still within SmallInt range
 	    },
 	},
 	'utils',
@@ -9120,11 +9126,30 @@ function requireVm_primitives () {
 	        return this.pos32BitIntFor(rcvr ^ arg);
 	    },
 	    doBitShift: function() {
+	        // SmallInts are handled by the bytecode,
+	        // so rcvr is a LargeInteger
 	        var rcvr = this.stackPos32BitInt(1);
 	        var arg = this.stackInteger(0);
 	        if (!this.success) return 0;
-	        var result = this.vm.safeShift(rcvr, arg); // returns Non-SmallInt number if failed
-	        return this.ensureSmallInt(result); // sets success to false if not a SmallInt
+	        // we're not using safeShift() here because we want the full 32 bits
+	        // and we know the receiver is unsigned
+	        var result;
+	        if (arg < 0) {
+	            if (arg < -31) return 0; // JS would treat arg=32 as arg=0
+	            result = rcvr >>> -arg;
+	        } else {
+	            if (arg > 31) {
+	                this.success = false; // rcvr is never 0
+	                return 0;
+	            }
+	            result = rcvr << arg;
+	            // check for lost bits by seeing if computation is reversible
+	            if ((result >>> arg) !== rcvr) {
+	                this.success = false;
+	                return 0;
+	            }
+	        }
+	        return this.pos32BitIntFor(result);
 	    },
 	    safeFDiv: function(dividend, divisor) {
 	        if (divisor === 0.0) {
@@ -11911,6 +11936,20 @@ function requireVm_input () {
 	    EventDragMove: 2,
 	    EventDragLeave: 3,
 	    EventDragDrop: 4,
+	    EventTypeWindow: 5,
+	    EventTypeComplex: 6,
+	    EventTypeMouseWheel: 7,
+	    WindowEventMetricChange: 1,
+	    WindowEventClose: 2,
+	    WindowEventIconise: 3,
+	    WindowEventActivated: 4,
+	    WindowEventPaint: 5,
+	    WindowEventScreenChange: 6,
+	    EventTouchDown: 1,
+	    EventTouchUp: 2,
+	    EventTouchMoved: 3,
+	    EventTouchStationary: 4,
+	    EventTouchCancelled: 5,
 	});
 	return vm_input;
 }
