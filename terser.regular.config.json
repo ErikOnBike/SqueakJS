@@ -1,0 +1,15 @@
+{
+  "mangle": false,
+  "compress": {
+    "drop_debugger": false,
+    "ecma": 2022,
+    "keep_infinity": true,
+    "toplevel": true,
+    "typeofs": false
+  },
+  "format": {
+    "preamble": "/*\n * Minified version of SqueakJS VM (incl. CodeParadise adaptations and plugins)\n * SqueakJS VM: Copyright (c) 2013-2020 Vanessa Freudenberg\n * CodeParadise: https://github.com/ErikOnBike/CodeParadise\n */"
+  },
+  "ecma": 2022,
+  "keep_classnames": true
+}
