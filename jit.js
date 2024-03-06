@@ -138,6 +138,7 @@ to single-step.
             'bitShift:', '//', 'bitAnd:', 'bitOr:', 'at:', 'at:put:', 'size', 'next', 'nextPut:',
             'atEnd', '==', 'class', 'blockCopy:', 'value', 'value:', 'do:', 'new', 'new:', 'x', 'y'];
         this.doitCounter = 0;
+        this.blockCounter = 0;
     },
 },
 'accessing', {
@@ -200,7 +201,10 @@ to single-step.
         return true;
     },
     functionNameFor: function(cls, sel) {
-        if (cls === undefined || cls === '?') return "DOIT_" + ++this.doitCounter;
+        if (cls === undefined || cls === '?') {
+            var isMethod = this.method.sqClass === this.vm.specialObjects[Squeak.splOb_ClassCompiledMethod];
+            return isMethod ? "DOIT_" + ++this.doitCounter : "BLOCK_" + ++this.blockCounter;
+        }
         cls = cls.replace(/ /g, "_").replace("[]", "Block");
         if (!/[^a-zA-Z0-9:_]/.test(sel))
             return cls + "_" + sel.replace(/:/g, "ː"); // unicode colon is valid in JS identifiers
@@ -635,7 +639,7 @@ to single-step.
                     var lit = (b2 >> 3) + (extA << 5),
                         numArgs = (b2 & 7) + ((extB & 63) << 3),
                         directed = extB >= 64;
-                        this.generateSend("lit[", 1 + lit, "]", numArgs, directed ? "sendSuperDirected" : true);
+                        this.generateSend("lit[", 1 + lit, "]", numArgs, directed ? "directed" : true);
                     break;
                 case 0xEC:
                     throw Error("unimplemented bytecode: 0xEC (class trap)");
@@ -987,16 +991,21 @@ to single-step.
         }
     },
     generateSend: function(prefix, num, suffix, numArgs, superSend) {
-        if (this.debug) this.generateDebugCode((superSend ? "super send " : "send ") + (prefix === "lit[" ? this.method.pointers[num].bytesAsString() : "..."));
+        if (this.debug) this.generateDebugCode(
+            (superSend === "directed" ? "directed super send " : superSend ? "super send " : "send ")
+            + (prefix === "lit[" ? this.method.pointers[num].bytesAsString() : "..."));
         this.generateLabel();
         this.needsVar[prefix] = true;
         this.needsVar['context'] = true;
-        var send = typeof superSend === "string" ? superSend : "send";
         // set pc, activate new method, and return to main loop
         // unless the method was a successfull primitive call (no context change)
-        this.source.push(
-            "vm.pc = ", this.pc, "; vm.", send, "(", prefix, num, suffix, ", ", numArgs, ", ", superSend, "); ",
-            "if (context !== vm.activeContext || vm.breakOutOfInterpreter !== false) return;\n");
+        this.source.push("vm.pc = ", this.pc);
+        if (superSend === "directed") {
+            this.source.push("; vm.sendSuperDirected(", prefix, num, suffix, ", ", numArgs, "); ");
+        } else {
+            this.source.push("; vm.send(", prefix, num, suffix, ", ", numArgs, ", ", superSend, "); ");
+        }
+        this.source.push("if (context !== vm.activeContext || vm.breakOutOfInterpreter !== false) return;\n");
         this.needsBreak = false; // already checked
         // need a label for coming back after send
         this.needsLabel[this.pc] = true;
