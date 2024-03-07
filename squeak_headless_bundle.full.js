@@ -117,8 +117,8 @@
     "version", {
         // system attributes
         vmVersion: "SqueakJS 1.1.2",
-        vmDate: "2024-02-25",               // Maybe replace at build time?
-        vmBuild: "2024-03-01",                 // or replace at runtime by last-modified?
+        vmDate: "2024-03-03",               // Maybe replace at build time?
+        vmBuild: "2024-03-07",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -1420,6 +1420,7 @@
         initialize: function(name) {
             this.headRoom = 100000000; // TODO: pass as option
             this.totalMemory = 0;
+            this.headerFlags = 0;
             this.name = name;
             this.gcCount = 0;
             this.gcMilliseconds = 0;
@@ -1491,10 +1492,12 @@
             var objectMemorySize = readWord(); //first unused location in heap
             var oldBaseAddr = readWord(); //object memory base address of image
             var specialObjectsOopInt = readWord(); //oop of array of special oops
-            this.savedHeaderWords = [];
-            for (var i = 0; i < 7; i++) {
+            var lastHash = readWord32(); if (is64Bit) readWord32(); // not used
+            var savedWindowSize = readWord(); // not used
+            this.headerFlags = readWord(); // vm attribute 48
+            this.savedHeaderWords = [lastHash, savedWindowSize, this.headerFlags];
+            for (var i = 0; i < 4; i++) {
                 this.savedHeaderWords.push(readWord32());
-                if (is64Bit && i < 3) readWord32(); // skip half
             }
             var firstSegSize = readWord();
             var prevObj;
@@ -3460,8 +3463,7 @@
             if (this.primHandler.semaphoresToSignal.length > 0)
                 this.primHandler.signalExternalSemaphores();  // signal pending semaphores, if any
             // if this is a long-running do-it, compile it
-            if (!this.method.compiled && this.compiler)
-                this.compiler.compile(this.method);
+            if (!this.method.compiled) this.compileIfPossible(this.method);
             // have to return to web browser once in a while
             if (now >= this.breakOutTick)
                 this.breakOut();
@@ -3802,10 +3804,14 @@
             this.receiver = newContext.pointers[Squeak.Context_receiver];
             if (this.receiver !== newRcvr)
                 throw Error("receivers don't match");
-            if (!newMethod.compiled && this.compiler)
-                this.compiler.compile(newMethod, optClass, optSel);
+            if (!newMethod.compiled) this.compileIfPossible(newMethod, optClass, optSel);
             // check for process switch on full method activation
             if (this.interruptCheckCounter-- <= 0) this.checkForInterrupts();
+        },
+        compileIfPossible(newMethod, optClass, optSel) {
+            if (!newMethod.compiled && this.compiler) {
+                this.compiler.compile(newMethod, optClass, optSel);
+            }
         },
         doReturn: function(returnValue, targetContext) {
             // get sender from block home or closure's outerContext
@@ -3893,7 +3899,9 @@
             if (success
                 && this.sp !== sp - argCount
                 && context === this.activeContext
-                && primIndex !== 117    // named prims are checked separately
+                && primIndex !== 117    // named prims are checked separately (see namedPrimitive)
+                && primIndex !== 118    // primitiveDoPrimitiveWithArgs (will call tryPrimitive again)
+                && primIndex !== 218    // primitiveDoNamedPrimitive (will call namedPrimitive)
                 && !this.frozen) {
                     this.warnOnce("stack unbalanced after primitive " + primIndex, "error");
                 }
@@ -5824,7 +5832,7 @@
                 case 216: if (this.oldPrims) return this.namedPrimitive('SocketPlugin', 'primitiveSocketRemotePort', argCount);
                 case 217: if (this.oldPrims) return this.namedPrimitive('SocketPlugin', 'primitiveSocketConnectToPort', argCount);
                 case 218: if (this.oldPrims) return this.namedPrimitive('SocketPlugin', 'primitiveSocketListenWithOrWithoutBacklog', argCount);
-                    else { this.vm.warnOnce("missing primitive: 218 (tryNamedPrimitiveInForWithArgs"); return false; }
+                    else return this.primitiveDoNamedPrimitive(argCount);
                 case 219: if (this.oldPrims) return this.namedPrimitive('SocketPlugin', 'primitiveSocketCloseConnection', argCount);
                 case 220: if (this.oldPrims) return this.namedPrimitive('SocketPlugin', 'primitiveSocketAbortConnection', argCount);
                     break;  // fail 212-220 if fell through
@@ -5846,9 +5854,11 @@
                 case 235: if (this.oldPrims) return this.namedPrimitive('MiscPrimitivePlugin', 'primitiveCompareString', argCount);
                 case 236: if (this.oldPrims) return this.namedPrimitive('MiscPrimitivePlugin', 'primitiveConvert8BitSigned', argCount);
                 case 237: if (this.oldPrims) return this.namedPrimitive('MiscPrimitivePlugin', 'primitiveCompressToByteArray', argCount);
+                    break;  // fail 234-237 if fell through
                 case 238: if (this.oldPrims) return this.namedPrimitive('SerialPlugin', 'primitiveSerialPortOpen', argCount);
+                    else return this.namedPrimitive('FloatArrayPlugin', 'primitiveAt', argCount);
                 case 239: if (this.oldPrims) return this.namedPrimitive('SerialPlugin', 'primitiveSerialPortClose', argCount);
-                    break;  // fail 234-239 if fell through
+                    else return this.namedPrimitive('FloatArrayPlugin', 'primitiveAtPut', argCount);
                 case 240: if (this.oldPrims) return this.namedPrimitive('SerialPlugin', 'primitiveSerialPortWrite', argCount);
                     else return this.popNandPushIfOK(argCount+1, this.microsecondClockUTC());
                 case 241: if (this.oldPrims) return this.namedPrimitive('SerialPlugin', 'primitiveSerialPortRead', argCount);
@@ -6805,6 +6815,29 @@
             this.vm.push(argumentArray);
             return false;
         },
+        primitiveDoNamedPrimitive: function(argCount) {
+            var argumentArray = this.stackNonInteger(0),
+                rcvr = this.stackNonInteger(1),
+                primMethod = this.stackNonInteger(2);
+            if (!this.success) return false;
+            var arraySize = argumentArray.pointersSize(),
+                cntxSize = this.vm.activeContext.pointersSize();
+            if (this.vm.sp + arraySize >= cntxSize) return false;
+            // Pop primIndex, rcvr, and argArray, then push new receiver and args in place...
+            this.vm.popN(3);
+            this.vm.push(rcvr);
+            for (var i = 0; i < arraySize; i++)
+                this.vm.push(argumentArray.pointers[i]);
+            // Run the primitive
+            if (this.doNamedPrimitive(arraySize, primMethod))
+                return true;
+            // Primitive failed, restore state for failure code
+            this.vm.popN(arraySize + 1);
+            this.vm.push(primMethod);
+            this.vm.push(rcvr);
+            this.vm.push(argumentArray);
+            return false;
+        },
         primitiveShortAtAndPut: function(argCount) {
             var rcvr = this.stackNonInteger(argCount),
                 index = this.stackInteger(argCount-1) - 1, // make zero-based
@@ -7139,6 +7172,7 @@
             // No need to nil-out remaining temps as context pointers are nil-initialized.
             this.vm.popN(argCount + 1);
             this.vm.newActiveContext(newContext);
+            if (!closureMethod.compiled) this.vm.compileIfPossible(closureMethod);
         },
     },
     'scheduling', {
@@ -7507,17 +7541,20 @@
                 // 46   size of machine code zone, in bytes (stored in image file header; Cog JIT VM only, otherwise nil)
                 case 46: return 0;
                 // 47   desired size of machine code zone, in bytes (applies at startup only, stored in image file header; Cog JIT VM only)
-                case 48: return 0;
-                // 48   various properties of the Cog VM as an integer encoding an array of bit flags.
-                //      Bit 0: tells the VM that the image's Process class has threadId as its 5th inst var (after nextLink, suspendedContext, priority & myList)
-                //      Bit 1: on Cog JIT VMs asks the VM to set the flag bit in interpreted methods
-                //      Bit 2: if set, preempting a process puts it to the head of its run queue, not the back,
+                case 48: return 0; // not yet using/modifying this.vm.image.headerFlags
+                // 48	various properties stored in the image header (that instruct the VM) as an integer encoding an array of bit flags.
+                //     Bit 0: in a threaded VM, if set, tells the VM that the image's Process class has threadAffinity as its 5th inst var
+                //             (after nextLink, suspendedContext, priority & myList)
+                //     Bit 1: in Cog JIT VMs, if set, asks the VM to set the flag bit in interpreted methods
+                //     Bit 2: if set, preempting a process puts it to the head of its run queue, not the back,
                 //             i.e. preempting a process by a higher priority one will not cause the preempted process to yield
-                //             to others at the same priority.
-                //      Bit 3: in a muilt-threaded VM, if set, the Window system will only be accessed from the first VM thread
-                //      Bit 4: in a Spur vm, if set, causes weaklings and ephemerons to be queued individually for finalization
-                //      Bit 5: if set, implies wheel events will be delivered as such and not mapped to arrow key events
-                //      Bit 6: if set, implies arithmetic primitives will fail if given arguments of different types (float vs int)
+                //                 to others at the same priority.
+                //     Bit 3: in a muilt-threaded VM, if set, the Window system will only be accessed from the first VM thread (now unassigned)
+                //     Bit 4: in a Spur VM, if set, causes weaklings and ephemerons to be queued individually for finalization
+                //     Bit 5: if set, implies wheel events will be delivered as such and not mapped to arrow key events
+                //     Bit 6: if set, implies arithmetic primitives will fail if given arguments of different types (float vs int)
+                //     Bit 7: if set, causes times delivered from file primitives to be in UTC rather than local time
+                //     Bit 8: if set, implies the VM will not upscale the display on high DPI monitors; older VMs did this by default.
                 // 49   the size of the external semaphore table (read-write; Cog VMs only)
                 // 50-51 reserved for VM parameters that persist in the image (such as eden above)
                 // 52   root (remembered) table maximum size (read-only)
@@ -7805,6 +7842,7 @@
                 'bitShift:', '//', 'bitAnd:', 'bitOr:', 'at:', 'at:put:', 'size', 'next', 'nextPut:',
                 'atEnd', '==', 'class', 'blockCopy:', 'value', 'value:', 'do:', 'new', 'new:', 'x', 'y'];
             this.doitCounter = 0;
+            this.blockCounter = 0;
         },
     },
     'accessing', {
@@ -7867,7 +7905,10 @@
             return true;
         },
         functionNameFor: function(cls, sel) {
-            if (cls === undefined || cls === '?') return "DOIT_" + ++this.doitCounter;
+            if (cls === undefined || cls === '?') {
+                var isMethod = this.method.sqClass === this.vm.specialObjects[Squeak.splOb_ClassCompiledMethod];
+                return isMethod ? "DOIT_" + ++this.doitCounter : "BLOCK_" + ++this.blockCounter;
+            }
             cls = cls.replace(/ /g, "_").replace("[]", "Block");
             if (!/[^a-zA-Z0-9:_]/.test(sel))
                 return cls + "_" + sel.replace(/:/g, "ː"); // unicode colon is valid in JS identifiers
@@ -8302,7 +8343,7 @@
                         var lit = (b2 >> 3) + (extA << 5),
                             numArgs = (b2 & 7) + ((extB & 63) << 3),
                             directed = extB >= 64;
-                            this.generateSend("lit[", 1 + lit, "]", numArgs, directed ? "sendSuperDirected" : true);
+                            this.generateSend("lit[", 1 + lit, "]", numArgs, directed ? "directed" : true);
                         break;
                     case 0xEC:
                         throw Error("unimplemented bytecode: 0xEC (class trap)");
@@ -8654,16 +8695,21 @@
             }
         },
         generateSend: function(prefix, num, suffix, numArgs, superSend) {
-            if (this.debug) this.generateDebugCode((superSend ? "super send " : "send ") + (prefix === "lit[" ? this.method.pointers[num].bytesAsString() : "..."));
+            if (this.debug) this.generateDebugCode(
+                (superSend === "directed" ? "directed super send " : superSend ? "super send " : "send ")
+                + (prefix === "lit[" ? this.method.pointers[num].bytesAsString() : "..."));
             this.generateLabel();
             this.needsVar[prefix] = true;
             this.needsVar['context'] = true;
-            var send = typeof superSend === "string" ? superSend : "send";
             // set pc, activate new method, and return to main loop
             // unless the method was a successfull primitive call (no context change)
-            this.source.push(
-                "vm.pc = ", this.pc, "; vm.", send, "(", prefix, num, suffix, ", ", numArgs, ", ", superSend, "); ",
-                "if (context !== vm.activeContext || vm.breakOutOfInterpreter !== false) return;\n");
+            this.source.push("vm.pc = ", this.pc);
+            if (superSend === "directed") {
+                this.source.push("; vm.sendSuperDirected(", prefix, num, suffix, ", ", numArgs, "); ");
+            } else {
+                this.source.push("; vm.send(", prefix, num, suffix, ", ", numArgs, ", ", superSend, "); ");
+            }
+            this.source.push("if (context !== vm.activeContext || vm.breakOutOfInterpreter !== false) return;\n");
             this.needsBreak = false; // already checked
             // need a label for coming back after send
             this.needsLabel[this.pc] = true;
