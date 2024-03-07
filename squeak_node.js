@@ -95,7 +95,7 @@ class SessionStorage {
 Object.assign(self, {
     localStorage: {},
     sessionStorage: new SessionStorage(),
-    WebSocket: require("./lib_node/WebSocket"),
+    WebSocket: typeof WebSocket === "undefined" ? require("./lib_node/WebSocket") : WebSocket,
     sha1: require("./lib/sha1"),
     btoa: function(string) {
         return Buffer.from(string, 'ascii').toString('base64');
