@@ -2965,7 +2965,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.1.2",
 	    vmDate: "2024-03-03",               // Maybe replace at build time?
-	    vmBuild: "2024-03-07",                 // or replace at runtime by last-modified?
+	    vmBuild: "2024-03-08",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -12461,7 +12461,9 @@ function requireVm_plugins_file_node () {
 	    },
 	    filePut: function(fileName, buffer) {
 	        try {
-	            fs.writeFileSync(fileName, new DataView(buffer));
+	            // Node does not support ArrayBuffer and Bun does not support DataView,
+	            // use a TypedArray as argument to writeFileSync.
+	            fs.writeFileSync(fileName, new Uint8Array(buffer));
 	        } catch(e) {
 	            console.error("Failed to create file with content: " + fileName);
 	        }
