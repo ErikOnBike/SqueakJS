@@ -405,19 +405,19 @@ function CpSystemPlugin() {
     },
 
     // Object instance methods
-    "primitiveObjectCrTrace:": function(argCount) {
+    "primitiveObjectTraceCr:": function(argCount) {
       if(argCount !== 1) return false;
       var message = this.interpreterProxy.stackValue(0).asString();
       console.log((new Date()).toISOString() + " " + message);
       return this.answerSelf(argCount);
     },
-    "primitiveObjectCrWarn:": function(argCount) {
+    "primitiveObjectWarnCr:": function(argCount) {
       if(argCount !== 1) return false;
       var message = this.interpreterProxy.stackValue(0).asString();
       console.warn((new Date()).toISOString() + " " + message);
       return this.answerSelf(argCount);
     },
-    "primitiveObjectCrError:": function(argCount) {
+    "primitiveObjectErrorCr:": function(argCount) {
       if(argCount !== 1) return false;
       var message = this.interpreterProxy.stackValue(0).asString();
       console.error((new Date()).toISOString() + " " + message);

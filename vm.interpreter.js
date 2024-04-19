@@ -1589,7 +1589,9 @@ Object.subclass('Squeak.Interpreter',
             var selector = optSel.bytesAsString();
             if (!optArgs || !optArgs.length) printed += selector;
             else {
-                var parts = selector.split(/(?<=:)/); // keywords
+                // var parts = selector.split(/(?<=:)/); // keywords
+                // ES: Changed, because original code is incompatible with JS on earlier iOS versions (lookbehind assertion not supported)
+                var parts = selector.replace(/(:[a-zA-Z])/g, ": $1").split(" :"); // keywords
                 for (var i = 0; i < optArgs.length; i++) {
                     if (i > 0) printed += ' ';
                     printed += parts[i] + ' ' + optArgs[i];

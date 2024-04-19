@@ -118,7 +118,7 @@
         // system attributes
         vmVersion: "SqueakJS 1.1.2",
         vmDate: "2024-03-03",               // Maybe replace at build time?
-        vmBuild: "2024-03-07",                 // or replace at runtime by last-modified?
+        vmBuild: "2024-04-19",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -4342,7 +4342,9 @@
                 var selector = optSel.bytesAsString();
                 if (!optArgs || !optArgs.length) printed += selector;
                 else {
-                    var parts = selector.split(/(?<=:)/); // keywords
+                    // var parts = selector.split(/(?<=:)/); // keywords
+                    // ES: Changed, because original code is incompatible with JS on earlier iOS versions (lookbehind assertion not supported)
+                    var parts = selector.replace(/(:[a-zA-Z])/g, ": $1").split(" :"); // keywords
                     for (var i = 0; i < optArgs.length; i++) {
                         if (i > 0) printed += ' ';
                         printed += parts[i] + ' ' + optArgs[i];
@@ -11901,19 +11903,19 @@
         },
 
         // Object instance methods
-        "primitiveObjectCrTrace:": function(argCount) {
+        "primitiveObjectTraceCr:": function(argCount) {
           if(argCount !== 1) return false;
           var message = this.interpreterProxy.stackValue(0).asString();
           console.log((new Date()).toISOString() + " " + message);
           return this.answerSelf(argCount);
         },
-        "primitiveObjectCrWarn:": function(argCount) {
+        "primitiveObjectWarnCr:": function(argCount) {
           if(argCount !== 1) return false;
           var message = this.interpreterProxy.stackValue(0).asString();
           console.warn((new Date()).toISOString() + " " + message);
           return this.answerSelf(argCount);
         },
-        "primitiveObjectCrError:": function(argCount) {
+        "primitiveObjectErrorCr:": function(argCount) {
           if(argCount !== 1) return false;
           var message = this.interpreterProxy.stackValue(0).asString();
           console.error((new Date()).toISOString() + " " + message);
