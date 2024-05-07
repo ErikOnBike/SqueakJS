@@ -118,7 +118,7 @@
         // system attributes
         vmVersion: "SqueakJS 1.1.2",
         vmDate: "2024-03-03",               // Maybe replace at build time?
-        vmBuild: "2024-04-19",                 // or replace at runtime by last-modified?
+        vmBuild: "2024-05-07",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -9223,22 +9223,44 @@
             // Create fake display and create interpreter
             var display = { vmOptions: [ "-vm-display-null", "-nodisplay" ] };
             var vm = new Squeak.Interpreter(image, display);
-            function run() {
+            vm.processLoopCounter = 0;
+            vm.runProcessLoop = function(restart) {
+                if(restart === true) {
+                    // Don't restart if process loop wasn't stopped before
+                    if(!vm.stoppedProcessLoop) {
+                        return;
+                    }
+                    vm.stoppedProcessLoop = false;
+                    vm.processLoopCounter = 0;
+                }
                 try {
                     vm.interpret(50, function runAgain(ms) {
+                        if(ms === "sleep") {
+                            if(vm.stoppedProcessLoop) {
+                                return;
+                            }
+
+                            // If we encounter a sleep for 8 consecutive times, stop process loop
+                            if(++vm.processLoopCounter > 7) {
+                                vm.stoppedProcessLoop = true;
+                            }
+                        } else {
+                            vm.processLoopCounter = 0;
+                        }
+
                         // Ignore display.quitFlag when requested.
                         // Some Smalltalk images quit when no display is found.
                         if(options.ignoreQuit || !display.quitFlag) {
-                            setTimeout(run, ms === "sleep" ? 200 : ms);
+                            setTimeout(vm.runProcessLoop, ms === "sleep" ? 10 : ms);
                         }
                     });
                 } catch(e) {
                     console.error("Failure during Squeak run: ", e);
                 }
-            }
+            };
 
             // Start the interpreter
-            run();
+            vm.runProcessLoop();
         });
     }
 
@@ -11590,6 +11612,13 @@
           }
         },
 
+        // Add helper method to restart process loop on semaphore update
+        signalSemaphoreWithIndex: function(index) {
+          var primHandler = this.primHandler;
+          primHandler.vm.runProcessLoop(true);
+          primHandler.signalSemaphoreWithIndex(index);
+        },
+
         // Helper methods for creating or converting Smalltalk and JavaScript objects
         updateStringSupport: function() {
           // Add #asString behavior to String classes (converting from Smalltalk to JavaScript Strings)
@@ -12604,28 +12633,28 @@
           var thisHandle = this;
           var webSocket = webSocketHandle.webSocket;
           webSocket.onopen = function(/* event */) {
-            thisHandle.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+            thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
           };
           webSocket.onclose = function(/* event */) {
-            thisHandle.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+            thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
           };
           webSocket.onerror = function(event) {
-            console.error("Failure on WebSocket for url [" + webSocketHandle.url + "]: ", JSON.stringify(event));
-            thisHandle.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+            console.error("Failure on WebSocket for url [" + webSocketHandle.url + "]: ", event);
+            thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
           };
           webSocket.onmessage = function(event) {
             new Response(event.data)
               .arrayBuffer()
               .then(function(data) {
                 webSocketHandle.buffers.push(new Uint8Array(data));
-                thisHandle.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+                thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
 
                 // Handle message as soon as possible
                 thisHandle.interpreterProxy.vm.forceInterruptCheck();
               })
               .catch(function(error) {
                 console.error("Failed to read websocket message", error);
-                thisHandle.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+                thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
               })
             ;
           };
@@ -12658,7 +12687,7 @@
               success = true;
             } catch(e) {
               console.error("Failed to write websocket message", e);
-              this.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+              this.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
             }
           }
           return this.answer(argCount, success);
@@ -12689,7 +12718,7 @@
             }
           } catch(e) {
             console.error("Failed to close websocket", e);
-            this.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+            this.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
           }
 
           return this.answer(argCount, success);
@@ -13607,7 +13636,7 @@
         },
         handleEvents: function() {
           // The event handler process is non-reentrant, check if it is already running and needs running
-          if(this.eventHandlerProcess && !this.eventHandlerProcess.isRunning && this.eventsReceived.length > 0) {
+          if(this.eventsReceived.length > 0 && this.eventHandlerProcess && !this.eventHandlerProcess.isRunning) {
     //var start = null;
     //if(window.sessionStorage.getItem("DEBUG")) start = performance.now();
             try {

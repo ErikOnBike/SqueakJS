@@ -875,7 +875,7 @@ function CpDOMPlugin() {
     },
     handleEvents: function() {
       // The event handler process is non-reentrant, check if it is already running and needs running
-      if(this.eventHandlerProcess && !this.eventHandlerProcess.isRunning && this.eventsReceived.length > 0) {
+      if(this.eventsReceived.length > 0 && this.eventHandlerProcess && !this.eventHandlerProcess.isRunning) {
 //var start = null;
 //if(window.sessionStorage.getItem("DEBUG")) start = performance.now();
         try {

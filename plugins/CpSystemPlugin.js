@@ -92,6 +92,13 @@ function CpSystemPlugin() {
       }
     },
 
+    // Add helper method to restart process loop on semaphore update
+    signalSemaphoreWithIndex: function(index) {
+      var primHandler = this.primHandler;
+      primHandler.vm.runProcessLoop(true);
+      primHandler.signalSemaphoreWithIndex(index);
+    },
+
     // Helper methods for creating or converting Smalltalk and JavaScript objects
     updateStringSupport: function() {
       // Add #asString behavior to String classes (converting from Smalltalk to JavaScript Strings)
@@ -1106,28 +1113,28 @@ function CpSystemPlugin() {
       var thisHandle = this;
       var webSocket = webSocketHandle.webSocket;
       webSocket.onopen = function(/* event */) {
-        thisHandle.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+        thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
       };
       webSocket.onclose = function(/* event */) {
-        thisHandle.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+        thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
       };
       webSocket.onerror = function(event) {
-        console.error("Failure on WebSocket for url [" + webSocketHandle.url + "]: ", JSON.stringify(event));
-        thisHandle.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+        console.error("Failure on WebSocket for url [" + webSocketHandle.url + "]: ", event);
+        thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
       };
       webSocket.onmessage = function(event) {
         new Response(event.data)
           .arrayBuffer()
           .then(function(data) {
             webSocketHandle.buffers.push(new Uint8Array(data));
-            thisHandle.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+            thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
 
             // Handle message as soon as possible
             thisHandle.interpreterProxy.vm.forceInterruptCheck();
           })
           .catch(function(error) {
             console.error("Failed to read websocket message", error);
-            thisHandle.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+            thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
           })
         ;
       };
@@ -1160,7 +1167,7 @@ function CpSystemPlugin() {
           success = true;
         } catch(e) {
           console.error("Failed to write websocket message", e);
-          this.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+          this.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
         }
       }
       return this.answer(argCount, success);
@@ -1191,7 +1198,7 @@ function CpSystemPlugin() {
         }
       } catch(e) {
         console.error("Failed to close websocket", e);
-        this.primHandler.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
+        this.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
       }
 
       return this.answer(argCount, success);

@@ -162,22 +162,43 @@ fs.readFile(root + imageName + ".image", function(error, data) {
         // Create fake display and create interpreter
         var display = { vmOptions: [ "-vm-display-null", "-nodisplay" ] };
         var vm = new Squeak.Interpreter(image, display);
-        function run() {
+        vm.processLoopCounter = 0;
+        vm.runProcessLoop = function(restart) {
+            if(restart === true) {
+                // Don't restart if process loop wasn't stopped before
+                if(!vm.stoppedProcessLoop) {
+                    return;
+                }
+                vm.stoppedProcessLoop = false;
+                vm.processLoopCounter = 0;
+            }
             try {
-                vm.interpret(200, function runAgain(ms) {
+                vm.interpret(50, function runAgain(ms) {
+                    if(ms === "sleep") {
+                        if(vm.stoppedProcessLoop) {
+                            return;
+                        }
+
+                        // If we encounter a sleep for 8 consecutive times, stop process loop
+                        if(++vm.processLoopCounter > 7) {
+                            vm.stoppedProcessLoop = true;
+                        }
+                    } else {
+                        vm.processLoopCounter = 0;
+                    }
 
                     // Ignore display.quitFlag when requested.
                     // Some Smalltalk images quit when no display is found.
                     if(ignoreQuit || !display.quitFlag) {
-                        setTimeout(run, ms === "sleep" ? 10 : ms);
+                        setTimeout(vm.runProcessLoop, ms === "sleep" ? 10 : ms);
                     }
                 });
             } catch(e) {
                 console.error("Failure during Squeak run: ", e);
             }
-        }
+        };
 
         // Start the interpreter
-        run();
+        vm.runProcessLoop();
     });
 });
