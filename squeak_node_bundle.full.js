@@ -2840,7 +2840,7 @@ function requireGlobals () {
 	if (hasRequiredGlobals) return globals;
 	hasRequiredGlobals = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -2939,7 +2939,7 @@ function requireVm () {
 	if (hasRequiredVm) return vm;
 	hasRequiredVm = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -2963,8 +2963,8 @@ function requireVm () {
 	Object.extend(Squeak,
 	"version", {
 	    // system attributes
-	    vmVersion: "SqueakJS 1.1.2",
-	    vmDate: "2024-03-03",               // Maybe replace at build time?
+	    vmVersion: "SqueakJS 1.2.0",
+	    vmDate: "2024-03-25",               // Maybe replace at build time?
 	    vmBuild: "2024-05-07",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
@@ -3186,7 +3186,7 @@ function requireVm_object () {
 	if (hasRequiredVm_object) return vm_object;
 	hasRequiredVm_object = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -3757,7 +3757,7 @@ function requireVm_object_spur () {
 	if (hasRequiredVm_object_spur) return vm_object_spur;
 	hasRequiredVm_object_spur = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -4225,7 +4225,7 @@ function requireVm_image () {
 	if (hasRequiredVm_image) return vm_image;
 	hasRequiredVm_image = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -4283,7 +4283,11 @@ function requireVm_image () {
 	    Objects are tenured to old space during a full GC.
 	    New objects are only referenced by other objects' pointers, and thus can be garbage-collected
 	    at any time by the Javascript GC.
-	    A partial GC links new objects to support enumeration of new space.
+	    A partial GC creates a linked list of new objects reachable from old space. We call this
+	    list "young space". It is not stored, but only created by primitives like nextObject,
+	    nextInstance, or become to support enumeration of new space.
+	    To efficiently find potential young space roots, any write to an instance variable sets
+	    the "dirty" flag of the object, allowing to skip clean objects.
 
 	    Weak references are finalized by a full GC. A partial GC only finalizes young weak references.
 
@@ -4692,10 +4696,9 @@ function requireVm_image () {
 	        // sorting them by id, and then linking them into old space.
 	        this.vm.addMessage("fullGC: " + reason);
 	        var start = Date.now();
-	        var previousNew = this.newSpaceCount;
-	        var previousYoung = this.youngSpaceCount;
+	        var previousNew = this.newSpaceCount; // includes young and newly allocated
 	        var previousOld = this.oldSpaceCount;
-	        var newObjects = this.markReachableObjects();
+	        var newObjects = this.markReachableObjects(); // technically these are young objects
 	        this.removeUnmarkedOldObjects();
 	        this.appendToOldObjects(newObjects);
 	        this.finalizeWeakReferences();
@@ -4705,11 +4708,20 @@ function requireVm_image () {
 	        this.hasNewInstances = {};
 	        this.gcCount++;
 	        this.gcMilliseconds += Date.now() - start;
-	        var delta = previousOld - this.oldSpaceCount;
-	        console.log("Full GC (" + reason + "): " + (Date.now() - start) + " ms, " +
-	            "surviving objects: " + this.oldSpaceCount + " (" + this.oldSpaceBytes + " bytes), " +
-	            "tenured " + newObjects.length + " (total " + (delta > 0 ? "+" : "") + delta + "), " +
-	            "gc'ed " + previousYoung + " young and " + (previousNew - previousYoung) + " new objects");
+	        var delta = previousOld - this.oldSpaceCount; // absolute change
+	        var survivingNew = newObjects.length;
+	        var survivingOld = this.oldSpaceCount - survivingNew;
+	        var gcedNew = previousNew - survivingNew;
+	        var gcedOld = previousOld - survivingOld;
+	        console.log("Full GC (" + reason + "): " + (Date.now() - start) + " ms;" +
+	            " before: " + previousOld.toLocaleString() + " old objects;" +
+	            " allocated " + previousNew.toLocaleString() + " new;" +
+	            " surviving " + survivingOld.toLocaleString() + " old;" +
+	            " tenuring " + survivingNew.toLocaleString() + " new;" +
+	            " gc'ed " + gcedOld.toLocaleString() + " old and " + gcedNew.toLocaleString() + " new;" +
+	            " total now: " + this.oldSpaceCount.toLocaleString() + " (" + (delta > 0 ? "+" : "") + delta.toLocaleString() + ", "
+	            + this.oldSpaceBytes.toLocaleString() + " bytes)"
+	            );
 
 	        return newObjects.length > 0 ? newObjects[0] : null;
 	    },
@@ -4720,7 +4732,7 @@ function requireVm_image () {
 	    },
 	    markReachableObjects: function() {
 	        // FullGC: Visit all reachable objects and mark them.
-	        // Return surviving new objects
+	        // Return surviving new objects (young objects to be tenured).
 	        // Contexts are handled specially: they have garbage beyond the stack pointer
 	        // which must not be traced, and is cleared out here
 	        // In weak objects, only the inst vars are traced
@@ -4870,8 +4882,8 @@ function requireVm_image () {
 	        this.pgcCount++;
 	        this.pgcMilliseconds += Date.now() - start;
 	        console.log("Partial GC (" + reason+ "): " + (Date.now() - start) + " ms, " +
-	            "found " + this.youngRootsCount + " roots in " + this.oldSpaceCount + " old, " +
-	            "kept " + this.youngSpaceCount + " young (" + (previous - this.youngSpaceCount) + " gc'ed)");
+	            "found " + this.youngRootsCount.toLocaleString() + " roots in " + this.oldSpaceCount.toLocaleString() + " old, " +
+	            "kept " + this.youngSpaceCount.toLocaleString() + " young (" + (previous - this.youngSpaceCount).toLocaleString() + " gc'ed)");
 	        return young[0];
 	    },
 	    youngRoots: function() {
@@ -5640,7 +5652,7 @@ function requireVm_interpreter () {
 	if (hasRequiredVm_interpreter) return vm_interpreter;
 	hasRequiredVm_interpreter = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -5663,11 +5675,12 @@ function requireVm_interpreter () {
 
 	Object.subclass('Squeak.Interpreter',
 	'initialization', {
-	    initialize: function(image, display) {
+	    initialize: function(image, display, options) {
 	        console.log('squeak: initializing interpreter ' + Squeak.vmVersion + ' (' + Squeak.vmDate + ')');
 	        this.Squeak = Squeak;   // store locally to avoid dynamic lookup in Lively
 	        this.image = image;
 	        this.image.vm = this;
+	        this.options = options || {};
 	        this.primHandler = new Squeak.Primitives(this, display);
 	        this.loadImageState();
 	        this.initVMState();
@@ -7570,7 +7583,7 @@ function requireVm_interpreter_proxy () {
 	if (hasRequiredVm_interpreter_proxy) return vm_interpreter_proxy;
 	hasRequiredVm_interpreter_proxy = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -7891,7 +7904,7 @@ function requireVm_instruction_stream () {
 	if (hasRequiredVm_instruction_stream) return vm_instruction_stream;
 	hasRequiredVm_instruction_stream = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -8039,7 +8052,7 @@ function requireVm_instruction_stream_sista () {
 	if (hasRequiredVm_instruction_stream_sista) return vm_instruction_stream_sista;
 	hasRequiredVm_instruction_stream_sista = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -8215,7 +8228,7 @@ function requireVm_instruction_printer () {
 	if (hasRequiredVm_instruction_printer) return vm_instruction_printer;
 	hasRequiredVm_instruction_printer = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -8405,7 +8418,7 @@ function requireVm_primitives () {
 	if (hasRequiredVm_primitives) return vm_primitives;
 	hasRequiredVm_primitives = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -8837,9 +8850,11 @@ function requireVm_primitives () {
 	    namedPrimitive: function(modName, functionName, argCount) {
 	        // duplicated in loadFunctionFrom()
 	        var mod = modName === "" ? this : this.loadedModules[modName];
+	        var justLoaded = false;
 	        if (mod === undefined) { // null if earlier load failed
 	            mod = this.loadModule(modName);
 	            this.loadedModules[modName] = mod;
+	            justLoaded = true;
 	        }
 	        var result = false;
 	        var sp = this.vm.sp;
@@ -8855,8 +8870,9 @@ function requireVm_primitives () {
 	            } else {
 	                this.vm.warnOnce("missing primitive: " + modName + "." + functionName);
 	            }
-	        } else {
-	            this.vm.warnOnce("missing module: " + modName + " (" + functionName + ")");
+	        } else if (justLoaded) {
+	            if (this.success) this.vm.warnOnce("missing module: " + modName + " (" + functionName + ")");
+	            else this.vm.warnOnce("failed to load module: " + modName + " (" + functionName + ")");
 	        }
 	        if ((result === true || (result !== false && this.success)) && this.vm.sp !== sp - argCount && !this.vm.frozen) {
 	            this.vm.warnOnce("stack unbalanced after primitive " + modName + "." + functionName, "error");
@@ -9358,6 +9374,17 @@ function requireVm_primitives () {
 	            stString.bytes[i] = jsString.charCodeAt(i) & 0xFF;
 	        return stString;
 	    },
+	    makeStStringFromBytes: function(bytes, zeroTerminated) {
+	        var length = bytes.length;
+	        if (zeroTerminated) {
+	            length = bytes.indexOf(0);
+	            if (length < 0) length = bytes.length;
+	        }
+	        var stString = this.vm.instantiateClass(this.vm.specialObjects[Squeak.splOb_ClassString], length);
+	        for (var i = 0; i < length; ++i)
+	            stString.bytes[i] = bytes[i];
+	        return stString;
+	    },
 	    makeStObject: function(obj, proxyClass) {
 	        if (obj === undefined || obj === null) return this.vm.nilObj;
 	        if (obj === true) return this.vm.trueObj;
@@ -9652,8 +9679,16 @@ function requireVm_primitives () {
 	        return this.popNandPushIfOK(argCount+1, this.makeLargeIfNeeded(bytes));
 	    },
 	    primitivePartialGC: function(argCount) {
-	        this.vm.image.partialGC("primitive");
-	        var bytes = this.vm.image.bytesLeft();
+	        var young = this.vm.image.partialGC("primitive");
+	        var youngSpaceBytes = 0;
+	        while (young) {
+	            youngSpaceBytes += young.totalBytes();
+	            young = young.nextObject;
+	        }
+	        console.log("    old space: " + this.vm.image.oldSpaceBytes.toLocaleString() + " bytes, " +
+	            "young space: " + youngSpaceBytes.toLocaleString() + " bytes, " +
+	            "total: " + (this.vm.image.oldSpaceBytes + youngSpaceBytes).toLocaleString() + " bytes");
+	        var bytes = this.vm.image.bytesLeft() - youngSpaceBytes;
 	        return this.popNandPushIfOK(argCount+1, this.makeLargeIfNeeded(bytes));
 	    },
 	    primitiveMakePoint: function(argCount, checkNumbers) {
@@ -10376,7 +10411,7 @@ function requireVm_primitives () {
 	            case 0: value = (argv && argv[0]) || this.filenameToSqueak(Squeak.vmPath + Squeak.vmFile); break;
 	            case 1: value = (argv && argv[1]) || this.display.documentName; break; // 1.x images want document here
 	            case 2: value = (argv && argv[2]) || this.display.documentName; break; // later images want document here
-	            case 1001: value = Squeak.platformName; break;
+	            case 1001: value = this.vm.options.unix ? "unix" : Squeak.platformName; break;
 	            case 1002: value = Squeak.osVersion; break;
 	            case 1003: value = Squeak.platformSubtype; break;
 	            case 1004: value = Squeak.vmVersion + ' ' + Squeak.vmMakerVersion; break;
@@ -10643,7 +10678,7 @@ function requireJit () {
 	if (hasRequiredJit) return jit;
 	hasRequiredJit = 1;
 	/*
-	 * Copyright (c) 2014-2020 Vanessa Freudenberg
+	 * Copyright (c) 2014-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -11824,7 +11859,7 @@ function requireVm_display () {
 	if (hasRequiredVm_display) return vm_display;
 	hasRequiredVm_display = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -11887,7 +11922,7 @@ function requireVm_display_headless () {
 	if (hasRequiredVm_display_headless) return vm_display_headless;
 	hasRequiredVm_display_headless = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -11941,7 +11976,7 @@ function requireVm_input () {
 	if (hasRequiredVm_input) return vm_input;
 	hasRequiredVm_input = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -12010,7 +12045,7 @@ function requireVm_input_headless () {
 	if (hasRequiredVm_input_headless) return vm_input_headless;
 	hasRequiredVm_input_headless = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -12059,7 +12094,7 @@ function requireVm_plugins () {
 	if (hasRequiredVm_plugins) return vm_plugins;
 	hasRequiredVm_plugins = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -12127,7 +12162,7 @@ function requireVm_plugins_file_node () {
 	if (hasRequiredVm_plugins_file_node) return vm_plugins_file_node;
 	hasRequiredVm_plugins_file_node = 1;
 	/*
-	 * Copyright (c) 2013-2020 Vanessa Freudenberg
+	 * Copyright (c) 2013-2024 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
