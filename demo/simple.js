@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020 Vanessa Freudenberg
+ * Copyright (c) 2013-2024 Vanessa Freudenberg
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,25 +21,14 @@
  */
 
 
-var fullscreen = navigator.standalone ||
-    window.matchMedia('(max-device-width: 800px) and (max-device-height: 800px)').matches;
-
 window.onload = function() {
     SqueakJS.runSqueak('squeakjs.image', sqCanvas, {
         appName: "SqueakJS",
         files: ['squeakjs.image', 'squeakjs.changes'],
-        fullscreen: fullscreen,
-        swapButtons: true,
-        header: sqHeader,
-        footer: sqFooter,
         spinner: sqSpinner,
-        swapCheckbox: sqSwapButtons,
-        fullscreenCheckbox: sqFullscreen,
     });
 };
 
-if (addToHomescreen.isStandalone)
-    fullscreen = true;
-else addToHomescreen({
+if (!addToHomescreen.isStandalone) addToHomescreen({
     appID: 'squeakjs.demo.add2home',
 });

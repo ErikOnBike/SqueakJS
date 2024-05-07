@@ -1,6 +1,6 @@
 "use strict";
 /*
- * Copyright (c) 2013-2020 Vanessa Freudenberg
+ * Copyright (c) 2013-2024 Vanessa Freudenberg
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,8 +24,8 @@
 Object.extend(Squeak,
 "version", {
     // system attributes
-    vmVersion: "SqueakJS 1.1.2",
-    vmDate: "2024-03-03",               // Maybe replace at build time?
+    vmVersion: "SqueakJS 1.2.0",
+    vmDate: "2024-03-25",               // Maybe replace at build time?
     vmBuild: "unknown",                 // or replace at runtime by last-modified?
     vmPath: "unknown",                  // Replace at runtime
     vmFile: "vm.js",

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020 Vanessa Freudenberg
+ * Copyright (c) 2013-2024 Vanessa Freudenberg
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,18 +27,12 @@ window.onload = function() {
     var url = "https://freudenbergs.de/vanessa/squeakjs/scratch/Scratch.image";
     SqueakJS.runSqueak(url, sqCanvas, {
         appName: "Scratch",
-        fullscreen: fullscreen,
-        header: sqHeader,
-        footer: sqFooter,
         spinner: sqSpinner,
-        fullscreenCheckbox: sqFullscreen,
         root: "/Scratch",
         templates: ["Projects", "Media", "Help", "locale"],
     });
 };
 
-if (addToHomescreen.isStandalone)
-    fullscreen = true;
-else addToHomescreen({
+if (addToHomescreen.isStandalone) addToHomescreen({
     appID: 'squeakjs.scratch.add2home',
 });

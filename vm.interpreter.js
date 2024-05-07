@@ -1,6 +1,6 @@
 "use strict";
 /*
- * Copyright (c) 2013-2020 Vanessa Freudenberg
+ * Copyright (c) 2013-2024 Vanessa Freudenberg
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,11 +23,12 @@
 
 Object.subclass('Squeak.Interpreter',
 'initialization', {
-    initialize: function(image, display) {
+    initialize: function(image, display, options) {
         console.log('squeak: initializing interpreter ' + Squeak.vmVersion + ' (' + Squeak.vmDate + ')');
         this.Squeak = Squeak;   // store locally to avoid dynamic lookup in Lively
         this.image = image;
         this.image.vm = this;
+        this.options = options || {};
         this.primHandler = new Squeak.Primitives(this, display);
         this.loadImageState();
         this.initVMState();

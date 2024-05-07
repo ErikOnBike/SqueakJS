@@ -1,6 +1,6 @@
 "use strict";
 /*
- * Copyright (c) 2013-2020 Vanessa Freudenberg
+ * Copyright (c) 2013-2024 Vanessa Freudenberg
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -81,6 +81,9 @@ Object.extend(Squeak.Primitives.prototype,
                 this.showForm(context, cursorForm, bounds, true);
             }
             var scale = this.display.scale || 1.0;
+            if (cursorForm.width <= 16 && cursorForm.height <= 16) {
+                scale = 1.0;
+            }
             cursorCanvas.style.width = Math.round(cursorCanvas.width * scale) + "px";
             cursorCanvas.style.height = Math.round(cursorCanvas.height * scale) + "px";
             this.display.cursorOffsetX = cursorForm.offsetX * scale|0;
@@ -339,7 +342,7 @@ Object.extend(Squeak.Primitives.prototype,
     },
     primitiveScreenScaleFactor: function(argCount) {
         var scale = this.display.scale || 1.0,
-            scaleFactor = 1.0 / scale;
+            scaleFactor = Math.min(1.0 / scale, window.devicePixelRatio || 1.0);
         return this.popNandPushIfOK(argCount+1, this.makeFloat(scaleFactor));
     },
     primitiveSetFullScreen: function(argCount) {

@@ -1,6 +1,6 @@
 "use strict";
 /*
- * Copyright (c) 2013-2020 Vanessa Freudenberg
+ * Copyright (c) 2013-2024 Vanessa Freudenberg
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -432,9 +432,11 @@ Object.subclass('Squeak.Primitives',
     namedPrimitive: function(modName, functionName, argCount) {
         // duplicated in loadFunctionFrom()
         var mod = modName === "" ? this : this.loadedModules[modName];
+        var justLoaded = false;
         if (mod === undefined) { // null if earlier load failed
             mod = this.loadModule(modName);
             this.loadedModules[modName] = mod;
+            justLoaded = true;
         }
         var result = false;
         var sp = this.vm.sp;
@@ -450,8 +452,9 @@ Object.subclass('Squeak.Primitives',
             } else {
                 this.vm.warnOnce("missing primitive: " + modName + "." + functionName);
             }
-        } else {
-            this.vm.warnOnce("missing module: " + modName + " (" + functionName + ")");
+        } else if (justLoaded) {
+            if (this.success) this.vm.warnOnce("missing module: " + modName + " (" + functionName + ")");
+            else this.vm.warnOnce("failed to load module: " + modName + " (" + functionName + ")");
         }
         if ((result === true || (result !== false && this.success)) && this.vm.sp !== sp - argCount && !this.vm.frozen) {
             this.vm.warnOnce("stack unbalanced after primitive " + modName + "." + functionName, "error");
@@ -954,6 +957,17 @@ Object.subclass('Squeak.Primitives',
             stString.bytes[i] = jsString.charCodeAt(i) & 0xFF;
         return stString;
     },
+    makeStStringFromBytes: function(bytes, zeroTerminated) {
+        var length = bytes.length;
+        if (zeroTerminated) {
+            length = bytes.indexOf(0);
+            if (length < 0) length = bytes.length;
+        }
+        var stString = this.vm.instantiateClass(this.vm.specialObjects[Squeak.splOb_ClassString], length);
+        for (var i = 0; i < length; ++i)
+            stString.bytes[i] = bytes[i];
+        return stString;
+    },
     makeStObject: function(obj, proxyClass) {
         if (obj === undefined || obj === null) return this.vm.nilObj;
         if (obj === true) return this.vm.trueObj;
@@ -1249,8 +1263,16 @@ Object.subclass('Squeak.Primitives',
         return this.popNandPushIfOK(argCount+1, this.makeLargeIfNeeded(bytes));
     },
     primitivePartialGC: function(argCount) {
-        this.vm.image.partialGC("primitive");
-        var bytes = this.vm.image.bytesLeft();
+        var young = this.vm.image.partialGC("primitive");
+        var youngSpaceBytes = 0;
+        while (young) {
+            youngSpaceBytes += young.totalBytes();
+            young = young.nextObject;
+        }
+        console.log("    old space: " + this.vm.image.oldSpaceBytes.toLocaleString() + " bytes, " +
+            "young space: " + youngSpaceBytes.toLocaleString() + " bytes, " +
+            "total: " + (this.vm.image.oldSpaceBytes + youngSpaceBytes).toLocaleString() + " bytes");
+        var bytes = this.vm.image.bytesLeft() - youngSpaceBytes;
         return this.popNandPushIfOK(argCount+1, this.makeLargeIfNeeded(bytes));
     },
     primitiveMakePoint: function(argCount, checkNumbers) {
@@ -1973,7 +1995,7 @@ Object.subclass('Squeak.Primitives',
             case 0: value = (argv && argv[0]) || this.filenameToSqueak(Squeak.vmPath + Squeak.vmFile); break;
             case 1: value = (argv && argv[1]) || this.display.documentName; break; // 1.x images want document here
             case 2: value = (argv && argv[2]) || this.display.documentName; break; // later images want document here
-            case 1001: value = Squeak.platformName; break;
+            case 1001: value = this.vm.options.unix ? "unix" : Squeak.platformName; break;
             case 1002: value = Squeak.osVersion; break;
             case 1003: value = Squeak.platformSubtype; break;
             case 1004: value = Squeak.vmVersion + ' ' + Squeak.vmMakerVersion; break;
