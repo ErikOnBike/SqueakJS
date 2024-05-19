@@ -1763,6 +1763,7 @@ Object.subclass('Squeak.Primitives',
         }
     },
     putToSleep: function(aProcess) {
+        if(aProcess === null) return;
         //Save the given process on the scheduler process list for its priority.
         var priority = aProcess.pointers[Squeak.Proc_priority];
         var processLists = this.getScheduler().pointers[Squeak.ProcSched_processLists];
@@ -1775,11 +1776,15 @@ Object.subclass('Squeak.Primitives',
         var oldProc = sched.pointers[Squeak.ProcSched_activeProcess];
         sched.pointers[Squeak.ProcSched_activeProcess] = newProc;
         sched.dirty = true;
-        oldProc.pointers[Squeak.Proc_suspendedContext] = this.vm.activeContext;
-        oldProc.dirty = true;
-        this.vm.newActiveContext(newProc.pointers[Squeak.Proc_suspendedContext]);
-        newProc.pointers[Squeak.Proc_suspendedContext] = this.vm.nilObj;
-        if (!this.oldPrims) newProc.pointers[Squeak.Proc_myList] = this.vm.nilObj;
+        if(oldProc !== null) {
+          oldProc.pointers[Squeak.Proc_suspendedContext] = this.vm.activeContext;
+          oldProc.dirty = true;
+        }
+        if(newProc !== null) {
+          this.vm.newActiveContext(newProc.pointers[Squeak.Proc_suspendedContext]);
+          newProc.pointers[Squeak.Proc_suspendedContext] = this.vm.nilObj;
+          if (!this.oldPrims) newProc.pointers[Squeak.Proc_myList] = this.vm.nilObj;
+        }
         this.vm.reclaimableContextCount = 0;
         if (this.vm.breakOnContextChanged) {
             this.vm.breakOnContextChanged = false;
@@ -1797,7 +1802,7 @@ Object.subclass('Squeak.Primitives',
         var p = schedLists.pointersSize() - 1;  // index of last indexable field
         var processList;
         do {
-            if (p < 0) throw Error("scheduler could not find a runnable process");
+            if (p < 0) return null;
             processList = schedLists.pointers[p--];
         } while (this.isEmptyList(processList));
         return this.removeFirstLinkOfList(processList);

@@ -21,8 +21,9 @@ function CpDOMPlugin() {
 
     setInterpreter: function(anInterpreter) {
       this.interpreterProxy = anInterpreter;
-      this.primHandler = this.interpreterProxy.vm.primHandler;
-      this.pointClass = this.interpreterProxy.vm.globalNamed("Point");
+      this.vm = anInterpreter.vm;
+      this.primHandler = this.vm.primHandler;
+      this.pointClass = this.vm.globalNamed("Point");
       this.domElementClass = null; // Only known after installation
       this.domRectangleClass = null; // Only known after installation
       this.systemPlugin = Squeak.externalModules.CpSystemPlugin;
@@ -113,13 +114,13 @@ function CpDOMPlugin() {
     // DOM element helper methods
     getDomElementClass: function() {
       if(!this.domElementClass) {
-        this.domElementClass = this.interpreterProxy.vm.globalNamed("CpDomElement");
+        this.domElementClass = this.vm.globalNamed("CpDomElement");
       }
       return this.domElementClass;
     },
     getDomRectangleClass: function() {
       if(!this.domRectangleClass) {
-        this.domRectangleClass = this.interpreterProxy.vm.globalNamed("CpDomRectangle");
+        this.domRectangleClass = this.vm.globalNamed("CpDomRectangle");
       }
       return this.domRectangleClass;
     },
@@ -150,7 +151,7 @@ function CpDOMPlugin() {
           var namespace = this.namespaceForURI(element.namespaceURI);
           elementClass = namespace ? namespace.elementClass : this.getDomElementClass();
         }
-        instance = this.interpreterProxy.vm.instantiateClass(elementClass, 0);
+        instance = this.vm.instantiateClass(elementClass, 0);
         instance.domElement = element;
         this.domElementMap.set(element, instance);
       }
@@ -158,7 +159,7 @@ function CpDOMPlugin() {
     },
     makeDomRectangle: function(rectangle) {
       let domRectangleClass = this.getDomRectangleClass();
-      let domRectangle = this.interpreterProxy.vm.instantiateClass(domRectangleClass, 0);
+      let domRectangle = this.vm.instantiateClass(domRectangleClass, 0);
       let primHandler = this.primHandler;
       domRectangleClass.allInstVarNames().forEach(function(name, index) {
         if(rectangle[name] !== undefined) {
@@ -864,34 +865,27 @@ function CpDOMPlugin() {
     runUpdateProcess: function() {
       let thisHandle = this;
       window.requestAnimationFrame(function() {
-        var start = performance.now();
         thisHandle.handleEvents();
-        // The total time spent in an animation frame should not be more than 16.666 ms.
-        // Keep a little extra room and therefor limit execution to 16ms.
-        // Transitions are less important than event handling.
-        thisHandle.handleTransitions(start + 16);
+        thisHandle.handleTransitions();
         thisHandle.runUpdateProcess();
       });
     },
     handleEvents: function() {
       // The event handler process is non-reentrant, check if it is already running and needs running
       if(this.eventsReceived.length > 0 && this.eventHandlerProcess && !this.eventHandlerProcess.isRunning) {
-//var start = null;
-//if(window.sessionStorage.getItem("DEBUG")) start = performance.now();
         try {
           this.eventHandlerProcess.isRunning = true;
-          this.systemPlugin.runUninterrupted(this.eventHandlerProcess);
+          this.eventHandlerProcess();
         } finally {
           this.eventHandlerProcess.isRunning = false;
         }
-//if(start !== null) console.log("Event handler took " + (performance.now() - start) + "ms");
       }
     },
 
     // Event class methods
     "primitiveEventRegisterProcess:": function(argCount) {
       if(argCount !== 1) return false;
-      this.eventHandlerProcess = this.interpreterProxy.stackValue(0);
+      this.eventHandlerProcess = this.systemPlugin.contextAsJavaScriptFunction(this.interpreterProxy.stackValue(0));
       return this.answerSelf(argCount);
     },
     "primitiveEventRegisterClass:forType:": function(argCount) {
@@ -1006,7 +1000,7 @@ function CpDOMPlugin() {
 
           // Create new instance and connect original event
           let eventClass = thisHandle.eventClassMap[event.type];
-          let newEvent = thisHandle.interpreterProxy.vm.instantiateClass(eventClass, 0);
+          let newEvent = thisHandle.vm.instantiateClass(eventClass, 0);
           newEvent.event = event;
           event.__cp_event = newEvent;
           return newEvent;
@@ -1116,7 +1110,12 @@ function CpDOMPlugin() {
     // Transition class methods
     "primitiveTransitionRegisterProcess:": function(argCount) {
       if(argCount !== 1) return false;
-      this.transitionProcess = this.interpreterProxy.stackValue(0);
+      this.transitionProcess = this.systemPlugin.contextAsJavaScriptFunction(this.interpreterProxy.stackValue(0));
+      return this.answerSelf(argCount);
+    },
+    "primitiveTransitionHasTransitions:": function(argCount) {
+      if(argCount !== 1) return false;
+      this.hasTransitions = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0)) === true;
       return this.answerSelf(argCount);
     },
     "primitiveTransitionTickCount": function(argCount) {
@@ -1124,7 +1123,9 @@ function CpDOMPlugin() {
       return this.answer(argCount, Math.ceil(performance.now() - this.transitionStartTick));
     },
     handleTransitions: function(endTime) {
-      this.systemPlugin.runUninterrupted(this.transitionProcess, endTime);
+      if(this.transitionProcess && this.hasTransitions) {
+        this.transitionProcess();
+      }
     }
   };
 }

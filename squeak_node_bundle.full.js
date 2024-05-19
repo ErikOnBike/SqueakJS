@@ -2965,7 +2965,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.0",
 	    vmDate: "2024-03-25",               // Maybe replace at build time?
-	    vmBuild: "2024-05-07",                 // or replace at runtime by last-modified?
+	    vmBuild: "2024-05-19",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -10179,6 +10179,7 @@ function requireVm_primitives () {
 	        }
 	    },
 	    putToSleep: function(aProcess) {
+	        if(aProcess === null) return;
 	        //Save the given process on the scheduler process list for its priority.
 	        var priority = aProcess.pointers[Squeak.Proc_priority];
 	        var processLists = this.getScheduler().pointers[Squeak.ProcSched_processLists];
@@ -10191,11 +10192,15 @@ function requireVm_primitives () {
 	        var oldProc = sched.pointers[Squeak.ProcSched_activeProcess];
 	        sched.pointers[Squeak.ProcSched_activeProcess] = newProc;
 	        sched.dirty = true;
-	        oldProc.pointers[Squeak.Proc_suspendedContext] = this.vm.activeContext;
-	        oldProc.dirty = true;
-	        this.vm.newActiveContext(newProc.pointers[Squeak.Proc_suspendedContext]);
-	        newProc.pointers[Squeak.Proc_suspendedContext] = this.vm.nilObj;
-	        if (!this.oldPrims) newProc.pointers[Squeak.Proc_myList] = this.vm.nilObj;
+	        if(oldProc !== null) {
+	          oldProc.pointers[Squeak.Proc_suspendedContext] = this.vm.activeContext;
+	          oldProc.dirty = true;
+	        }
+	        if(newProc !== null) {
+	          this.vm.newActiveContext(newProc.pointers[Squeak.Proc_suspendedContext]);
+	          newProc.pointers[Squeak.Proc_suspendedContext] = this.vm.nilObj;
+	          if (!this.oldPrims) newProc.pointers[Squeak.Proc_myList] = this.vm.nilObj;
+	        }
 	        this.vm.reclaimableContextCount = 0;
 	        if (this.vm.breakOnContextChanged) {
 	            this.vm.breakOnContextChanged = false;
@@ -10213,7 +10218,7 @@ function requireVm_primitives () {
 	        var p = schedLists.pointersSize() - 1;  // index of last indexable field
 	        var processList;
 	        do {
-	            if (p < 0) throw Error("scheduler could not find a runnable process");
+	            if (p < 0) return null;
 	            processList = schedLists.pointers[p--];
 	        } while (this.isEmptyList(processList));
 	        return this.removeFirstLinkOfList(processList);
@@ -14943,19 +14948,23 @@ function CpSystemPlugin() {
     setInterpreter: function(anInterpreter) {
       this.setupGlobalObject();
       this.interpreterProxy = anInterpreter;
-      this.primHandler = this.interpreterProxy.vm.primHandler;
-      this.characterClass = this.interpreterProxy.vm.globalNamed("Character");
-      this.symbolClass = this.interpreterProxy.vm.globalNamed("Symbol");
+      this.vm = anInterpreter.vm;
+      this.primHandler = this.vm.primHandler;
+      this.characterClass = this.vm.globalNamed("Character");
+      this.symbolClass = this.vm.globalNamed("Symbol");
       this.symbolTable = Object.create(null);
-      this.stringClass = this.interpreterProxy.vm.globalNamed("String");
-      this.byteStringClass = this.interpreterProxy.vm.globalNamed("ByteString");
-      this.wideStringClass = this.interpreterProxy.vm.globalNamed("WideString");
-      this.arrayClass = this.interpreterProxy.vm.globalNamed("Array");
-      this.byteArrayClass = this.interpreterProxy.vm.globalNamed("ByteArray");
-      this.wordArrayClass = this.interpreterProxy.vm.globalNamed("WordArray");
-      this.associationClass = this.interpreterProxy.vm.globalNamed("Association");
-      this.dictionaryClass = this.interpreterProxy.vm.globalNamed("Dictionary");
-      this.blockClosureClass = this.interpreterProxy.vm.globalNamed("BlockClosure");
+      this.stringClass = this.vm.globalNamed("String");
+      this.byteStringClass = this.vm.globalNamed("ByteString");
+      this.wideStringClass = this.vm.globalNamed("WideString");
+      this.arrayClass = this.vm.globalNamed("Array");
+      this.byteArrayClass = this.vm.globalNamed("ByteArray");
+      this.wordArrayClass = this.vm.globalNamed("WordArray");
+      this.associationClass = this.vm.globalNamed("Association");
+      this.dictionaryClass = this.vm.globalNamed("Dictionary");
+      this.contextClass = this.vm.globalNamed("Context");
+      this.processClass = this.vm.globalNamed("Process");
+      this.functionCalls = [];
+      this.maxProcessPriority = this.primHandler.getScheduler().pointers[Squeak.ProcSched_processLists].pointersSize();
       this.globalProxyClasses = {};
       this.updateStringSupport();
       this.updateMakeStObject();
@@ -14996,11 +15005,7 @@ function CpSystemPlugin() {
     },
 
     // Helper method for running a process uninterrupted
-    runUninterrupted: function(process, endTime) {
-      if(!process || process.isNil) {
-        return;
-      }
-
+    runUninterrupted: function(process) {
       // Make specified process the active process (disregard process priorities)
       var primHandler = this.primHandler;
       var scheduler = primHandler.getScheduler();
@@ -15010,27 +15015,21 @@ function CpSystemPlugin() {
       // Run the specified process until the process goes
       // to sleep again or the end time is reached.
       // This 'runner' assumes the process runs 'quickly'.
-      var vm = primHandler.vm;
+      var vm = this.vm;
+      var compiled;
       do {
-        if(vm.method.compiled) {
-          vm.method.compiled(vm);
+        if(compiled = vm.method.compiled) {
+          compiled(vm);
         } else {
           vm.interpretOne();
         }
-      } while(process === scheduler.pointers[Squeak.ProcSched_activeProcess] && (endTime === undefined || performance.now() < endTime));
-
-      // If process did not finish in time, put it to sleep
-      if(process === scheduler.pointers[Squeak.ProcSched_activeProcess]) {
-//console.warn("Process put to sleep because it did not finish in time: " + (process === this.transitionProcess ? "transition" : process === this.eventHandlerProcess ? "process" : process === this.callbackEvaluatorProcess ? "callback evaluator" : "unknown"));
-        primHandler.putToSleep(process);
-      }
+      } while(process === scheduler.pointers[Squeak.ProcSched_activeProcess]);
     },
 
     // Add helper method to restart process loop on semaphore update
     signalSemaphoreWithIndex: function(index) {
-      var primHandler = this.primHandler;
-      primHandler.vm.runProcessLoop(true);
-      primHandler.signalSemaphoreWithIndex(index);
+      this.vm.runProcessLoop(true);
+      this.primHandler.signalSemaphoreWithIndex(index);
     },
 
     // Helper methods for creating or converting Smalltalk and JavaScript objects
@@ -15057,7 +15056,7 @@ function CpSystemPlugin() {
           }
           return charValue;
         });
-        var newString = thisHandle.interpreterProxy.vm.instantiateClass(isWideString ? thisHandle.wideStringClass : thisHandle.byteStringClass, src.length);
+        var newString = thisHandle.vm.instantiateClass(isWideString ? thisHandle.wideStringClass : thisHandle.byteStringClass, src.length);
         var dst = newString.bytes || newString.words || [];
         for(var i = 0; i < src.length; i++) {
           dst[i] = src[i];
@@ -15072,8 +15071,8 @@ function CpSystemPlugin() {
       // Keep track of SmallInteger min and max value.
       // 64-bit images have 61-bit SmallIntegers, 32-bit images have 31-bit SmallIntegers.
       // Since JavaScript only supports 53-bits integers, use that max in 64-bit images.
-      this.minSmallInteger = this.interpreterProxy.vm.image.is64Bit ? Number.MIN_SAFE_INTEGER : -0x40000000;
-      this.maxSmallInteger = this.interpreterProxy.vm.image.is64Bit ? Number.MAX_SAFE_INTEGER :  0x3FFFFFFF;
+      this.minSmallInteger = this.vm.image.is64Bit ? Number.MIN_SAFE_INTEGER : -0x40000000;
+      this.maxSmallInteger = this.vm.image.is64Bit ? Number.MAX_SAFE_INTEGER :  0x3FFFFFFF;
       this.primHandler.makeStObject = function(obj, proxyClass, seen) {
         // Check for special 'primitive' objects (no need to use 'seen' here)
         if(obj === undefined || obj === null) return this.vm.nilObj;
@@ -15184,7 +15183,7 @@ function CpSystemPlugin() {
       };
     },
     makeStWordArray: function(obj) {
-        var array = this.interpreterProxy.vm.instantiateClass(this.wordArrayClass, obj.length);
+        var array = this.vm.instantiateClass(this.wordArrayClass, obj.length);
         for(var i = 0; i < obj.length; i++) {
             // Words are 32-bit values
             array.words[i] = obj[i] & 0xffffffff;
@@ -15207,7 +15206,7 @@ function CpSystemPlugin() {
         }
       }
 
-      var association = this.interpreterProxy.vm.instantiateClass(this.associationClass, 0);
+      var association = this.vm.instantiateClass(this.associationClass, 0);
       // Assume instVars are #key and #value (in that order)
       association.pointers[0] = this.primHandler.makeStObject(key, undefined, seen);
       association.pointers[1] = this.primHandler.makeStObject(value, undefined, seen);
@@ -15222,7 +15221,7 @@ function CpSystemPlugin() {
       }
 
       // Create Dictionary and add it to seen collection directly, to allow internal references to be mapped correctly
-      var dictionary = this.interpreterProxy.vm.instantiateClass(this.dictionaryClass, 0);
+      var dictionary = this.vm.instantiateClass(this.dictionaryClass, 0);
       seen.push({ jsObj: obj, stObj: dictionary });
 
       // Add key value pairs to Dictionary
@@ -15281,19 +15280,21 @@ function CpSystemPlugin() {
         return obj;
       } else if(obj.isFloat) {
         return obj.float;
+      } else if(this.isStringClass(obj.sqClass)) {
+        return obj.asString();
       } else if(obj.sqClass === this.arrayClass) {
         return this.arrayAsJavaScriptObject(obj);
       } else if(obj.sqClass === this.dictionaryClass) {
         return this.dictionaryAsJavaScriptObject(obj);
       } else if(obj.domElement) {
         return obj.domElement;
-      } else if(this.isBlockClosureClass(obj.sqClass)) {
-        return this.blockAsJavaScriptObject(obj);
+      } else if(this.isContextClass(obj.sqClass)) {
+        return this.contextAsJavaScriptFunction(obj);
       } else if(obj.jsObj) {
         return obj.jsObj;
       }
 
-      // Assume a String is used otherwise
+//console.log("Default value for asJavaScriptObject for: ", obj, obj.toString());
       return obj.asString();
     },
     arrayAsJavaScriptObject: function(obj) {
@@ -15315,29 +15316,56 @@ function CpSystemPlugin() {
       });
       return result;
     },
-    blockAsJavaScriptObject: function(obj) {
+    contextAsJavaScriptFunction: function(obj) {
       var thisHandle = this;
-      var callback = { block: obj };
       return function() {
         var funcArgs = Array.from(arguments);
         var blockArgs = funcArgs.map(function(each) {
           return thisHandle.primHandler.makeStObject(each);
         });
-        callback.arguments = blockArgs;
-        thisHandle.callbackEvaluatorCurrentCallback = callback;
-        var callbackEvaluatorProcess = thisHandle.callbackEvaluatorProcess;
-        if(callbackEvaluatorProcess !== undefined) {
-          thisHandle.runUninterrupted(callbackEvaluatorProcess);
-        } else {
-          thisHandle.interpreterProxy.vm.warnOnce("No callback evaluator process installed. Blocks cannot be used for callbacks without it. See CpCallbackEvaluator");
+
+        // Create a cloned (i.e. reset) Context and a new Process
+        // to execute the Block (allowing Smalltalk Blocks to call more
+        // 'nested' JavaScript functions wrapping another Block).
+        var context = thisHandle.vm.image.clone(obj);
+        var process = thisHandle.vm.instantiateClass(thisHandle.processClass, 0);
+        process.pointers[Squeak.Proc_suspendedContext] = context;
+        process.pointers[Squeak.Proc_priority] = thisHandle.maxProcessPriority;
+
+        // Keep a call stack of functions (to allow mentioned nesting)
+        var functionCall = { process: process, arguments: blockArgs };
+        thisHandle.functionCalls.push(functionCall);
+        thisHandle.runUninterrupted(functionCall.process);
+        if(functionCall !== thisHandle.functionCalls.pop()) {
+          console.warn("Unbalanced usage of runUninterrupted for contextAsJavaScriptFunction");
         }
-        thisHandle.callbackEvaluatorCurrentCallback = undefined;
-        return callback.result;
+
+        // The result should have been stored by the CpJavaScriptFunction >> #wrap: method
+        if(functionCall.result === undefined) {
+          console.warn("No result set executing a Smalltalk block as JavaScript function");
+        }
+
+        // If a nested call has been performed, re-activate previous function (process)
+        var previous = thisHandle.functionCalls[thisHandle.functionCalls.length - 1];
+        if(previous !== undefined) {
+	  thisHandle.primHandler.transferTo(previous.process);
+        }
+        return functionCall.result;
       };
     },
-    isBlockClosureClass: function(sqClass) {
+    isContextClass: function(sqClass) {
+      // For P8 check for superclasses matching Context (i.e. P8 has subclass MethodContext)
       while(sqClass && !sqClass.isNil) {
-        if(sqClass === this.blockClosureClass) {
+        if(sqClass === this.contextClass) {
+          return true;
+        }
+        sqClass = sqClass.superclass();
+      }
+      return false;
+    },
+    isStringClass: function(sqClass) {
+      while(sqClass && !sqClass.isNil) {
+        if(sqClass === this.stringClass) {
           return true;
         }
         sqClass = sqClass.superclass();
@@ -15373,7 +15401,7 @@ function CpSystemPlugin() {
       }
 
       // Create new Symbol
-      var newSymbol = this.interpreterProxy.vm.instantiateClass(this.symbolClass, string.length);
+      var newSymbol = this.vm.instantiateClass(this.symbolClass, string.length);
       // Assume ByteSymbols only
       for(var i = 0; i < string.length; i++) {
         newSymbol.bytes[i] = string.charCodeAt(i) & 0xFF;
@@ -15509,7 +15537,7 @@ function CpSystemPlugin() {
       var receiver = this.interpreterProxy.stackValue(argCount);
       var wordArray = this.interpreterProxy.stackValue(0);
       var src = wordArray.words || [];
-      var newString = this.interpreterProxy.vm.instantiateClass(receiver, src.length);
+      var newString = this.vm.instantiateClass(receiver, src.length);
       var dst = newString.bytes || newString.words;
       for(var i = 0; i < src.length; i++) {
         dst[i] = src[i];
@@ -15537,7 +15565,7 @@ function CpSystemPlugin() {
     createSubstring: function(src, start, end) {
       var substring = src.slice(start, end);
       var isWideString = substring.some(function(charValue) { return charValue >= 256; });
-      var newString = this.interpreterProxy.vm.instantiateClass(isWideString ? this.wideStringClass : this.byteStringClass, substring.length);
+      var newString = this.vm.instantiateClass(isWideString ? this.wideStringClass : this.byteStringClass, substring.length);
       var dst = newString.bytes || newString.words || [];
       for(var i = 0; i < substring.length; i++) {
         dst[i] = substring[i];
@@ -15551,7 +15579,7 @@ function CpSystemPlugin() {
       var first = receiver.bytes || receiver.words || [];
       var second = otherString.bytes || otherString.words || [];
       var isWideString = receiver.words || otherString.words || false;
-      var newString = this.interpreterProxy.vm.instantiateClass(isWideString ? this.wideStringClass : this.byteStringClass, first.length + second.length);
+      var newString = this.vm.instantiateClass(isWideString ? this.wideStringClass : this.byteStringClass, first.length + second.length);
       var dst = newString.bytes || newString.words;
       var i = 0;
       for(; i < first.length; i++) {
@@ -15588,7 +15616,7 @@ function CpSystemPlugin() {
       if(argCount !== 0) return false;
       var receiver = this.interpreterProxy.stackValue(argCount);
       var src = receiver.bytes || receiver.words || [];
-      var uppercaseString = this.interpreterProxy.vm.instantiateClass(receiver.sqClass, src.length);
+      var uppercaseString = this.vm.instantiateClass(receiver.sqClass, src.length);
       var dst = receiver.bytes ? uppercaseString.bytes : uppercaseString.words;
       for(var i = 0; i < src.length; i++) {
         dst[i] = String.fromCodePoint(src[i]).toUpperCase().codePointAt(0);
@@ -15599,7 +15627,7 @@ function CpSystemPlugin() {
       if(argCount !== 0) return false;
       var receiver = this.interpreterProxy.stackValue(argCount);
       var src = receiver.bytes || receiver.words || [];
-      var lowercaseString = this.interpreterProxy.vm.instantiateClass(receiver.sqClass, src.length);
+      var lowercaseString = this.vm.instantiateClass(receiver.sqClass, src.length);
       var dst = receiver.bytes ? lowercaseString.bytes : lowercaseString.words;
       for(var i = 0; i < src.length; i++) {
         dst[i] = String.fromCodePoint(src[i]).toLowerCase().codePointAt(0);
@@ -15681,7 +15709,7 @@ function CpSystemPlugin() {
       var receiver = this.interpreterProxy.stackValue(argCount);
       var srcString = this.interpreterProxy.stackValue(0);
       var src = srcString.bytes || srcString.words || [];
-      var newString = this.interpreterProxy.vm.instantiateClass(receiver, src.length);
+      var newString = this.vm.instantiateClass(receiver, src.length);
       var dst = newString.words;
       for(var i = 0; i < src.length; i++) {
         dst[i] = src[i];
@@ -15753,6 +15781,7 @@ function CpSystemPlugin() {
       if(obj === undefined) return false;
       var selectorName = this.interpreterProxy.stackValue(2).asString();
       if(!selectorName) return false;
+//console.log("Call " + selectorName + " on " + obj + " of class " + receiver.sqClass.className());
 
       // Handle special case for pass through, needed to support Promises
       // (which should not perform Smalltalk to JavaScript conversions
@@ -15810,7 +15839,7 @@ function CpSystemPlugin() {
 
       // Proxy the result, if so requested
       if(result !== undefined && result !== null && !proxyClass.isNil) {
-        var proxyInstance = this.interpreterProxy.vm.instantiateClass(proxyClass, 0);
+        var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
         proxyInstance.jsObj = result;
         result = proxyInstance;
       }
@@ -15899,7 +15928,7 @@ function CpSystemPlugin() {
       // Retrieve and validate a (constructor) function, representing a class reference
       var objClass = obj[selectorName];
       if(!objClass) return false;
-      var proxyInstance = this.interpreterProxy.vm.instantiateClass(proxyClass, 0);
+      var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
       proxyInstance.jsObj = objClass;
       return this.answer(argCount, proxyInstance);
     },
@@ -15924,12 +15953,34 @@ function CpSystemPlugin() {
       var instance = undefined;
       try {
         var jsInstance = Reflect.construct(jsClass, args);
-        instance = this.interpreterProxy.vm.instantiateClass(proxyClass.isNil ? this.getProxyClassFor(jsInstance) : proxyClass, 0);
+        instance = this.vm.instantiateClass(proxyClass.isNil ? this.getProxyClassFor(jsInstance) : proxyClass, 0);
         instance.jsObj = jsInstance;
       } catch(e) {
         console.error("Failed to instantiate class " + jsClass);
       }
       return this.answer(argCount, instance);
+    },
+
+    // JavaScriptFunction instance methods
+    "primitiveJavaScriptFunctionCurrentArguments": function(argCount) {
+      if(argCount !== 0) return false;
+      var currentFunction = this.functionCalls[this.functionCalls.length - 1];
+      if(currentFunction === undefined) {
+        console.error("primitiveJavaScriptFunctionCurrentArguments called without a function present");
+        return false;
+      }
+      return this.answer(argCount, currentFunction.arguments);
+    },
+    "primitiveJavaScriptFunctionCurrentSetResult:": function(argCount) {
+      if(argCount !== 1) return false;
+      var result = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+      var currentFunction = this.functionCalls[this.functionCalls.length - 1];
+      if(currentFunction === undefined) {
+        console.error("primitiveJavaScriptFunctionCurrentSetResult: called without a function present");
+        return false;
+      }
+      currentFunction.result = result;
+      return this.answerSelf(argCount);
     },
 
     // ClientEnvironment instance methods
@@ -16064,7 +16115,7 @@ function CpSystemPlugin() {
             thisHandle.signalSemaphoreWithIndex(webSocketHandle.semaIndex);
 
             // Handle message as soon as possible
-            thisHandle.interpreterProxy.vm.forceInterruptCheck();
+            thisHandle.vm.forceInterruptCheck();
           })
           .catch(function(error) {
             console.error("Failed to read websocket message", error);
@@ -16081,7 +16132,7 @@ function CpSystemPlugin() {
 
       // Get next receive buffer
       var receiveBuffer = webSocketHandle.buffers.splice(0, 1)[0];  // Remove first element and keep it
-      var result = receiveBuffer ? this.primHandler.makeStByteArray(receiveBuffer) : this.interpreterProxy.nilObject();
+      var result = receiveBuffer ? this.primHandler.makeStByteArray(receiveBuffer) : this.vm.nilObj;
 
       // Answer ByteArray or nil
       return this.answer(argCount, result);
@@ -16136,33 +16187,6 @@ function CpSystemPlugin() {
       }
 
       return this.answer(argCount, success);
-    },
-
-    // CallbackEvaluator class methods
-    "primitiveCallbackEvaluatorRegisterProcess:": function(argCount) {
-      if(argCount !== 1) return false;
-      this.callbackEvaluatorProcess = this.interpreterProxy.stackValue(0);
-      this.callbackEvaluatorCallbacks = [];
-      return this.answerSelf(argCount);
-    },
-    "primitiveCallbackEvaluatorCurrentCallbackBlockAndArguments": function(argCount) {
-      if(argCount !== 0) return false;
-      var callback = this.callbackEvaluatorCurrentCallback;
-      if(callback === undefined) {
-        // No callback present, answer nil
-        return this.answer(argCount, null);
-      }
-      return this.answer(argCount, [ callback.block, callback.arguments ]);
-    },
-    "primitiveCallbackEvaluatorCurrentCallbackResult:": function(argCount) {
-      if(argCount !== 1) return false;
-      var result = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
-      var callback = this.callbackEvaluatorCurrentCallback;
-      if(callback === undefined) {
-        return false;
-      }
-      callback.result = result;
-      return this.answerSelf(argCount);
     }
   };
 }
