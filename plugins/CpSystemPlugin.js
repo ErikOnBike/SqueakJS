@@ -22,6 +22,7 @@ function CpSystemPlugin() {
       this.wordArrayClass = this.vm.globalNamed("WordArray");
       this.associationClass = this.vm.globalNamed("Association");
       this.dictionaryClass = this.vm.globalNamed("Dictionary");
+      this.orderedDictionaryClass = this.vm.globalNamed("OrderedDictionary");
       this.contextClass = this.vm.globalNamed("Context");
       this.processClass = this.vm.globalNamed("Process");
       this.functionCalls = [];
@@ -206,7 +207,7 @@ function CpSystemPlugin() {
 
         // Dictionary like objects (make exception for the global object)
         if((obj.constructor === Object && !thisHandle.hasFunctions(obj)) || (obj.constructor === undefined && typeof obj === "object")) {
-          return thisHandle.makeStDictionary(obj, seen);
+          return thisHandle.makeStOrderedDictionary(obj, seen);
         }
 
         // Wrap in JS proxy instance if so requested or when global proxy class is registered
@@ -272,6 +273,28 @@ function CpSystemPlugin() {
       association.pointers[0] = this.primHandler.makeStObject(key, undefined, seen);
       association.pointers[1] = this.primHandler.makeStObject(value, undefined, seen);
       return association;
+    },
+    makeStOrderedDictionary: function(obj, seen) {
+      // Check if obj is already known
+      seen = seen || [];
+      var stObj = this.findSeenObj(seen, obj);
+      if(stObj !== undefined) {
+        return stObj;
+      }
+
+      // Create OrederedDictionary and add it to seen collection directly, to allow internal references to be mapped correctly
+      var orderedDictionary = this.vm.instantiateClass(this.orderedDictionaryClass, 0);
+      seen.push({ jsObj: obj, stObj: orderedDictionary });
+
+      // Create dictionary with the content
+      var dictionary = this.makeStDictionary(obj, []);  // Do not provide seen values, because a unique needs to be created
+      orderedDictionary.pointers[0] = dictionary;
+
+      // Create array with ordered keys
+      var orderedKeys = this.primHandler.makeStArray(Object.keys(obj), undefined, seen);
+      orderedDictionary.pointers[1] = orderedKeys;
+
+      return orderedDictionary;
     },
     makeStDictionary: function(obj, seen) {
       // Check if obj is already known
@@ -345,6 +368,8 @@ function CpSystemPlugin() {
         return obj.asString();
       } else if(obj.sqClass === this.arrayClass) {
         return this.arrayAsJavaScriptObject(obj);
+      } else if(obj.sqClass === this.orderedDictionaryClass) {
+        return this.orderedDictionaryAsJavaScriptObject(obj);
       } else if(obj.sqClass === this.dictionaryClass) {
         return this.dictionaryAsJavaScriptObject(obj);
       } else if(obj.domElement) {
@@ -353,6 +378,10 @@ function CpSystemPlugin() {
         return this.contextAsJavaScriptFunction(obj);
       } else if(obj.jsObj) {
         return obj.jsObj;
+      } else if(obj.bytes) {
+        return obj.bytes;
+      } else if(obj.words) {
+        return obj.words;
       }
 
 //console.log("Default value for asJavaScriptObject for: ", obj, obj.toString());
@@ -361,6 +390,14 @@ function CpSystemPlugin() {
     arrayAsJavaScriptObject: function(obj) {
       var thisHandle = this;
       return (obj.pointers || []).map(function(each) { return thisHandle.asJavaScriptObject(each); });
+    },
+    orderedDictionaryAsJavaScriptObject: function(obj) {
+      var unordered = this.dictionaryAsJavaScriptObject(obj.pointers[0]);
+      var orderedKeys = this.arrayAsJavaScriptObject(obj.pointers[1]);
+      return orderedKeys.reduce(function(result, key) {
+        result[key] = unordered[key];
+        return result;
+      }, {});
     },
     dictionaryAsJavaScriptObject: function(obj) {
       var thisHandle = this;
@@ -409,8 +446,13 @@ function CpSystemPlugin() {
         // If a nested call has been performed, re-activate previous function (process)
         var previous = thisHandle.functionCalls[thisHandle.functionCalls.length - 1];
         if(previous !== undefined) {
-	  thisHandle.primHandler.transferTo(previous.process);
+          thisHandle.primHandler.transferTo(previous.process);
         }
+
+        // Release functionCall (except for result)
+        delete functionCall.process;
+        delete functionCall.arguments;
+
         return functionCall.result;
       };
     },
