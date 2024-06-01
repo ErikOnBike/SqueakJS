@@ -118,7 +118,7 @@
         // system attributes
         vmVersion: "SqueakJS 1.2.0",
         vmDate: "2024-03-25",               // Maybe replace at build time?
-        vmBuild: "2024-05-23",                 // or replace at runtime by last-modified?
+        vmBuild: "2024-06-01",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -11583,6 +11583,8 @@
           this.associationClass = this.vm.globalNamed("Association");
           this.dictionaryClass = this.vm.globalNamed("Dictionary");
           this.orderedDictionaryClass = this.vm.globalNamed("OrderedDictionary");
+          this.largePositiveIntegerClass = this.vm.globalNamed("LargePositiveInteger");
+          this.largeNegativeIntegerClass = this.vm.globalNamed("LargeNegativeInteger");
           this.contextClass = this.vm.globalNamed("Context");
           this.processClass = this.vm.globalNamed("Process");
           this.functionCalls = [];
@@ -11702,7 +11704,7 @@
             if(obj === false) return this.vm.falseObj;
             if(obj.sqClass) return obj;
             if(obj.constructor === Number) {
-              if(obj === (obj|0)) {
+              if(Number.isInteger(obj)) {
                 // Using bitwise-operators only works on 32-bits integers, therefore use regular division
                 // instead of bit-shifts below during conversion to LargeIntegers.
                 // The code below only works for 32-bit images. On 64-bit images, this code will not get
@@ -11936,6 +11938,10 @@
             return obj.domElement;
           } else if(this.isContextClass(obj.sqClass)) {
             return this.contextAsJavaScriptFunction(obj);
+          } else if(obj.sqClass === this.largePositiveIntegerClass) {
+            return this.largeInteger(obj);
+          } else if(obj.sqClass === this.largeNegativeIntegerClass) {
+            return -this.largeInteger(obj);
           } else if(obj.jsObj) {
             return obj.jsObj;
           } else if(obj.bytes) {
@@ -12034,6 +12040,15 @@
             sqClass = sqClass.superclass();
           }
           return false;
+        },
+        largeInteger: function(obj) {
+          var value = 0;
+          var bytes = obj.bytes || [];
+          var n = bytes.length;
+          for(var i = 0, f = 1; i < n; i++, f *= 256) {
+            value += bytes[i] * f;
+          }
+          return value;
         },
 
         // Object instance methods
