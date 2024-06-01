@@ -102,20 +102,20 @@ Object.subclass('Squeak.Primitives',
             case 19: return false;                                 // Guard primitive for simulation -- *must* fail
             // LargeInteger Primitives (20-39)
             // 32-bit logic is aliased to Integer prims above
-            case 20: this.vm.warnOnce("missing primitive: 20 (primitiveRemLargeIntegers)"); return false;
-            case 21: this.vm.warnOnce("missing primitive: 21 (primitiveAddLargeIntegers)"); return false;
-            case 22: this.vm.warnOnce("missing primitive: 22 (primitiveSubtractLargeIntegers)"); return false;
+            case 20: return this.primitiveRemLargeIntegers(argCount);
+            case 21: return this.primitiveAddLargeIntegers(argCount);
+            case 22: return this.primitiveSubtractLargeIntegers(argCount);
             case 23: return this.primitiveLessThanLargeIntegers(argCount);
             case 24: return this.primitiveGreaterThanLargeIntegers(argCount);
             case 25: return this.primitiveLessOrEqualLargeIntegers(argCount);
             case 26: return this.primitiveGreaterOrEqualLargeIntegers(argCount);
             case 27: return this.primitiveEqualLargeIntegers(argCount);
             case 28: return this.primitiveNotEqualLargeIntegers(argCount);
-            case 29: this.vm.warnOnce("missing primitive: 29 (primitiveMultiplyLargeIntegers)"); return false;
-            case 30: this.vm.warnOnce("missing primitive: 30 (primitiveDivideLargeIntegers)"); return false;
-            case 31: this.vm.warnOnce("missing primitive: 31 (primitiveModLargeIntegers)"); return false;
-            case 32: this.vm.warnOnce("missing primitive: 32 (primitiveDivLargeIntegers)"); return false;
-            case 33: this.vm.warnOnce("missing primitive: 33 (primitiveQuoLargeIntegers)"); return false;
+            case 29: return this.primitiveMultiplyLargeIntegers(argCount);
+            case 30: return this.primitiveDivideLargeIntegers(argCount);
+            case 31: return this.primitiveModLargeIntegers(argCount);
+            case 32: return this.primitiveDivLargeIntegers(argCount);
+            case 33: return this.primitiveQuoLargeIntegers(argCount);
             case 34: this.vm.warnOnce("missing primitive: 34 (primitiveBitAndLargeIntegers)"); return false;
             case 35: this.vm.warnOnce("missing primitive: 35 (primitiveBitOrLargeIntegers)"); return false;
             case 36: this.vm.warnOnce("missing primitive: 36 (primitiveBitXorLargeIntegers)"); return false;
@@ -808,6 +808,15 @@ Object.subclass('Squeak.Primitives',
             result *= Math.pow(2, Math.floor((exponent + i) / steps));
         return result;
     },
+    primitiveRemLargeIntegers: function(argCount) {
+        return this.popNandPushIfOK(argCount + 1, this.makeStObject(this.stackSigned53BitInt(1) % this.stackSigned53BitInt(0)));
+    },
+    primitiveAddLargeIntegers: function(argCount) {
+        return this.popNandPushIfOK(argCount + 1, this.makeStObject(this.stackSigned53BitInt(1) + this.stackSigned53BitInt(0)));
+    },
+    primitiveSubtractLargeIntegers: function(argCount) {
+        return this.popNandPushIfOK(argCount + 1, this.makeStObject(this.stackSigned53BitInt(1) - this.stackSigned53BitInt(0)));
+    },
     primitiveLessThanLargeIntegers: function(argCount) {
         return this.popNandPushBoolIfOK(argCount+1, this.stackSigned53BitInt(1) < this.stackSigned53BitInt(0));
     },
@@ -825,6 +834,21 @@ Object.subclass('Squeak.Primitives',
     },
     primitiveNotEqualLargeIntegers: function(argCount) {
         return this.popNandPushBoolIfOK(argCount+1, this.stackSigned53BitInt(1) !== this.stackSigned53BitInt(0));
+    },
+    primitiveMultiplyLargeIntegers: function(argCount) {
+        return this.popNandPushIfOK(argCount + 1, this.makeStObject(this.stackSigned53BitInt(1) * this.stackSigned53BitInt(0)));
+    },
+    primitiveDivideLargeIntegers: function(argCount) {
+        return this.popNandPushIfOK(argCount + 1, this.makeStObject(this.stackSigned53BitInt(1) / this.stackSigned53BitInt(0)));
+    },
+    primitiveModLargeIntegers: function(argCount) {
+        return this.popNandPushIfOK(argCount + 1, this.makeStObject(Math.floor(this.stackSigned53BitInt(1) % this.stackSigned53BitInt(0))));
+    },
+    primitiveDivLargeIntegers: function(argCount) {
+        return this.popNandPushIfOK(argCount + 1, this.makeStObject(Math.floor(this.stackSigned53BitInt(1) / this.stackSigned53BitInt(0))));
+    },
+    primitiveQuoLargeIntegers: function(argCount) {
+        return this.popNandPushIfOK(argCount + 1, this.makeStObject(Math.trunc(this.stackSigned53BitInt(1) / this.stackSigned53BitInt(0))));
     },
 },
 'utils', {
