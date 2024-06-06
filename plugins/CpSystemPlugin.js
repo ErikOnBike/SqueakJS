@@ -30,6 +30,7 @@ function CpSystemPlugin() {
       this.functionCalls = [];
       this.maxProcessPriority = this.primHandler.getScheduler().pointers[Squeak.ProcSched_processLists].pointersSize();
       this.globalProxyClasses = {};
+      this.lastException = null;
       this.updateStringSupport();
       this.updateMakeStObject();
       this.updateMakeStArray();
@@ -914,6 +915,7 @@ function CpSystemPlugin() {
       try {
 
         // Fast path for function calls first, then use reflection mechanism
+        this.lastException = null;
         var func = obj[selectorName];
         if(func && func.apply) {
           result = func.apply(obj, args);
@@ -952,7 +954,8 @@ function CpSystemPlugin() {
           }
         }
       } catch(e) {
-        console.error("Failed to perform apply:withArguments on proxied JavaScript object:", e, "Selector:", selectorName, "Arguments:", args, "Object:", obj);
+        this.lastException = e;
+        return false;
       }
 
       // Proxy the result, if so requested
@@ -962,6 +965,18 @@ function CpSystemPlugin() {
         result = proxyInstance;
       }
       return this.answer(argCount, result);
+    },
+    "primitiveJavaScriptObjectLastExceptionAs:": function(argCount) {
+      if(argCount !== 1) return false;
+      var proxyClass = this.interpreterProxy.stackValue(0);
+      var exception = this.lastException;
+      if(exception !== null) {
+        var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
+        proxyInstance.jsObj = exception;
+        exception = proxyInstance;
+        this.lastException = null;
+      }
+      return this.answer(argCount, exception);
     },
     "primitiveJavaScriptObjectPropertyAt:": function(argCount) {
       if(argCount !== 1) return false;

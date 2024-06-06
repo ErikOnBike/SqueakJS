@@ -2965,7 +2965,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.0",
 	    vmDate: "2024-03-25",               // Maybe replace at build time?
-	    vmBuild: "2024-06-01",                 // or replace at runtime by last-modified?
+	    vmBuild: "2024-06-06",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -8520,20 +8520,20 @@ function requireVm_primitives () {
 	            case 19: return false;                                 // Guard primitive for simulation -- *must* fail
 	            // LargeInteger Primitives (20-39)
 	            // 32-bit logic is aliased to Integer prims above
-	            case 20: this.vm.warnOnce("missing primitive: 20 (primitiveRemLargeIntegers)"); return false;
-	            case 21: this.vm.warnOnce("missing primitive: 21 (primitiveAddLargeIntegers)"); return false;
-	            case 22: this.vm.warnOnce("missing primitive: 22 (primitiveSubtractLargeIntegers)"); return false;
+	            case 20: return this.primitiveRemLargeIntegers(argCount);
+	            case 21: return this.primitiveAddLargeIntegers(argCount);
+	            case 22: return this.primitiveSubtractLargeIntegers(argCount);
 	            case 23: return this.primitiveLessThanLargeIntegers(argCount);
 	            case 24: return this.primitiveGreaterThanLargeIntegers(argCount);
 	            case 25: return this.primitiveLessOrEqualLargeIntegers(argCount);
 	            case 26: return this.primitiveGreaterOrEqualLargeIntegers(argCount);
 	            case 27: return this.primitiveEqualLargeIntegers(argCount);
 	            case 28: return this.primitiveNotEqualLargeIntegers(argCount);
-	            case 29: this.vm.warnOnce("missing primitive: 29 (primitiveMultiplyLargeIntegers)"); return false;
-	            case 30: this.vm.warnOnce("missing primitive: 30 (primitiveDivideLargeIntegers)"); return false;
-	            case 31: this.vm.warnOnce("missing primitive: 31 (primitiveModLargeIntegers)"); return false;
-	            case 32: this.vm.warnOnce("missing primitive: 32 (primitiveDivLargeIntegers)"); return false;
-	            case 33: this.vm.warnOnce("missing primitive: 33 (primitiveQuoLargeIntegers)"); return false;
+	            case 29: return this.primitiveMultiplyLargeIntegers(argCount);
+	            case 30: return this.primitiveDivideLargeIntegers(argCount);
+	            case 31: return this.primitiveModLargeIntegers(argCount);
+	            case 32: return this.primitiveDivLargeIntegers(argCount);
+	            case 33: return this.primitiveQuoLargeIntegers(argCount);
 	            case 34: this.vm.warnOnce("missing primitive: 34 (primitiveBitAndLargeIntegers)"); return false;
 	            case 35: this.vm.warnOnce("missing primitive: 35 (primitiveBitOrLargeIntegers)"); return false;
 	            case 36: this.vm.warnOnce("missing primitive: 36 (primitiveBitXorLargeIntegers)"); return false;
@@ -9225,6 +9225,15 @@ function requireVm_primitives () {
 	            result *= Math.pow(2, Math.floor((exponent + i) / steps));
 	        return result;
 	    },
+	    primitiveRemLargeIntegers: function(argCount) {
+	        return this.popNandPushIfOK(argCount + 1, this.makeStObject(this.stackSigned53BitInt(1) % this.stackSigned53BitInt(0)));
+	    },
+	    primitiveAddLargeIntegers: function(argCount) {
+	        return this.popNandPushIfOK(argCount + 1, this.makeStObject(this.stackSigned53BitInt(1) + this.stackSigned53BitInt(0)));
+	    },
+	    primitiveSubtractLargeIntegers: function(argCount) {
+	        return this.popNandPushIfOK(argCount + 1, this.makeStObject(this.stackSigned53BitInt(1) - this.stackSigned53BitInt(0)));
+	    },
 	    primitiveLessThanLargeIntegers: function(argCount) {
 	        return this.popNandPushBoolIfOK(argCount+1, this.stackSigned53BitInt(1) < this.stackSigned53BitInt(0));
 	    },
@@ -9242,6 +9251,21 @@ function requireVm_primitives () {
 	    },
 	    primitiveNotEqualLargeIntegers: function(argCount) {
 	        return this.popNandPushBoolIfOK(argCount+1, this.stackSigned53BitInt(1) !== this.stackSigned53BitInt(0));
+	    },
+	    primitiveMultiplyLargeIntegers: function(argCount) {
+	        return this.popNandPushIfOK(argCount + 1, this.makeStObject(this.stackSigned53BitInt(1) * this.stackSigned53BitInt(0)));
+	    },
+	    primitiveDivideLargeIntegers: function(argCount) {
+	        return this.popNandPushIfOK(argCount + 1, this.makeStObject(this.stackSigned53BitInt(1) / this.stackSigned53BitInt(0)));
+	    },
+	    primitiveModLargeIntegers: function(argCount) {
+	        return this.popNandPushIfOK(argCount + 1, this.makeStObject(Math.floor(this.stackSigned53BitInt(1) % this.stackSigned53BitInt(0))));
+	    },
+	    primitiveDivLargeIntegers: function(argCount) {
+	        return this.popNandPushIfOK(argCount + 1, this.makeStObject(Math.floor(this.stackSigned53BitInt(1) / this.stackSigned53BitInt(0))));
+	    },
+	    primitiveQuoLargeIntegers: function(argCount) {
+	        return this.popNandPushIfOK(argCount + 1, this.makeStObject(Math.trunc(this.stackSigned53BitInt(1) / this.stackSigned53BitInt(0))));
 	    },
 	},
 	'utils', {
@@ -14969,6 +14993,7 @@ function CpSystemPlugin() {
       this.functionCalls = [];
       this.maxProcessPriority = this.primHandler.getScheduler().pointers[Squeak.ProcSched_processLists].pointersSize();
       this.globalProxyClasses = {};
+      this.lastException = null;
       this.updateStringSupport();
       this.updateMakeStObject();
       this.updateMakeStArray();
@@ -15853,6 +15878,7 @@ function CpSystemPlugin() {
       try {
 
         // Fast path for function calls first, then use reflection mechanism
+        this.lastException = null;
         var func = obj[selectorName];
         if(func && func.apply) {
           result = func.apply(obj, args);
@@ -15891,7 +15917,8 @@ function CpSystemPlugin() {
           }
         }
       } catch(e) {
-        console.error("Failed to perform apply:withArguments on proxied JavaScript object:", e, "Selector:", selectorName, "Arguments:", args, "Object:", obj);
+        this.lastException = e;
+        return false;
       }
 
       // Proxy the result, if so requested
@@ -15901,6 +15928,18 @@ function CpSystemPlugin() {
         result = proxyInstance;
       }
       return this.answer(argCount, result);
+    },
+    "primitiveJavaScriptObjectLastExceptionAs:": function(argCount) {
+      if(argCount !== 1) return false;
+      var proxyClass = this.interpreterProxy.stackValue(0);
+      var exception = this.lastException;
+      if(exception !== null) {
+        var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
+        proxyInstance.jsObj = exception;
+        exception = proxyInstance;
+        this.lastException = null;
+      }
+      return this.answer(argCount, exception);
     },
     "primitiveJavaScriptObjectPropertyAt:": function(argCount) {
       if(argCount !== 1) return false;
