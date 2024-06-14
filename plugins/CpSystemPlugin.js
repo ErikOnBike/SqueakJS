@@ -311,15 +311,44 @@ function CpSystemPlugin() {
       var dictionary = this.vm.instantiateClass(this.dictionaryClass, 0);
       seen.push({ jsObj: obj, stObj: dictionary });
 
-      // Add key value pairs to Dictionary
+      // Create Array big enough to hold all associations (1/4 empty) and fill with nil values
       var keys = Object.keys(obj);
+      var arraySize = Math.floor((keys.length + 1) * 4 / 3);
+      var associations = Array(arraySize).fill(null);
+
+      // Add Associations to Array
       var thisHandle = this;
-      var associations = keys.map(function(key) {
-        return thisHandle.makeStAssociation(key, obj[key], seen);
+      keys.forEach(function(key) {
+        var association = thisHandle.makeStAssociation(key, obj[key], seen);
+
+        // Perform the Dictionary >> #scanFor: but knowing we will not find our element, just look for empty slot
+        var position = thisHandle.stringHash(Array.from(key).map(function(c) { return c.codePointAt(0); })) % arraySize;
+        var index = position;
+        var found = false;
+        while(!found && index < arraySize) {
+          if(associations[index] === null) {
+            found = true;
+          } else {
+            index++;
+          }
+        }
+        if(!found) {
+          index = 0;
+          while(!found && index < position) {
+            if(associations[index] === null) {
+              found = true;
+            } else {
+              index++;
+            }
+          }
+        }
+
+        // Should always have found an empty slot
+        associations[index] = association;
       });
 
       // Assume instVars are #tally and #array (in that order)
-      dictionary.pointers[0] = associations.length;
+      dictionary.pointers[0] = keys.length;
       dictionary.pointers[1] = this.primHandler.makeStArray(associations, undefined, seen);
       return dictionary;
     },
@@ -691,6 +720,15 @@ function CpSystemPlugin() {
       }
       return newString;
     },
+    stringHash: function(src) {
+      var hash = 0x3400; // Initial value ByteString hash
+      for(var i = 0; i < src.length; i++) {
+        hash = hash + src[i];
+        var low = hash & 0x3fff;
+        hash = (0x260d * low + ((0x260d * Math.floor(hash / 0x4000) + (0x0065 * low) & 0x3fff) * 0x4000)) & 0xfffffff;
+      }
+      return hash;
+    },
     "primitiveStringConcatenate:": function(argCount) {
       if(argCount !== 1) return false;
       var receiver = this.interpreterProxy.stackValue(argCount);
@@ -813,12 +851,7 @@ function CpSystemPlugin() {
       if(argCount !== 0) return false;
       var receiver = this.interpreterProxy.stackValue(argCount);
       var src = receiver.bytes || receiver.words || [];
-      var hash = 0x3400; // Initial value ByteString hash
-      for(var i = 0; i < src.length; i++) {
-        hash = hash + src[i];
-        var low = hash & 0x3fff;
-        hash = (0x260d * low + ((0x260d * Math.floor(hash / 0x4000) + (0x0065 * low) & 0x3fff) * 0x4000)) & 0xfffffff;
-      }
+      var hash = this.stringHash(src);
       return this.answer(argCount, hash);
     },
 
