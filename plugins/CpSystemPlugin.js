@@ -1011,13 +1011,20 @@ function CpSystemPlugin() {
       }
       return this.answer(argCount, exception);
     },
-    "primitiveJavaScriptObjectPropertyAt:": function(argCount) {
-      if(argCount !== 1) return false;
+    "primitiveJavaScriptObjectPropertyAt:resultAs:": function(argCount) {
+      if(argCount !== 2) return false;
       var receiver = this.interpreterProxy.stackValue(argCount);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
-      var propertyName = this.interpreterProxy.stackValue(0).asString();
-      return this.answer(argCount, obj[propertyName]);
+      var propertyName = this.interpreterProxy.stackValue(1).asString();
+      var proxyClass = this.interpreterProxy.stackValue(0);
+      var result = obj[propertyName];
+      if(result !== undefined && result !== null && !proxyClass.isNil) {
+        var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
+        proxyInstance.jsObj = result;
+        result = proxyInstance;
+      }
+      return this.answer(argCount, result);
     },
     "primitiveJavaScriptObjectPropertyAt:put:": function(argCount) {
       if(argCount !== 2) return false;
