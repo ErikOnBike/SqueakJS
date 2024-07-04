@@ -123,7 +123,7 @@ require("./vm.display.headless.js");    // use headless display to prevent image
 require("./vm.input.js");
 require("./vm.input.headless.js");    // use headless input to prevent image crashing/becoming unresponsive
 require("./vm.plugins.js");
-require("./vm.plugins.file.node");
+require("./vm.plugins.file.node.js");
 
 // Set the appropriate VM and platform values
 Object.extend(Squeak, {

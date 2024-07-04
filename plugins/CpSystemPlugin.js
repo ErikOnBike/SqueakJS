@@ -483,6 +483,9 @@ function CpSystemPlugin() {
         var previous = thisHandle.functionCalls[thisHandle.functionCalls.length - 1];
         if(previous !== undefined) {
           thisHandle.primHandler.transferTo(previous.process);
+        } else if(thisHandle.vm.stoppedProcessLoop) {
+          // Restart process loop to resurrect any pending process
+          thisHandle.vm.runProcessLoop(true);
         }
 
         // Release functionCall (except for result)
