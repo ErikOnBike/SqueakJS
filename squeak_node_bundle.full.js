@@ -2965,7 +2965,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.0",
 	    vmDate: "2024-03-25",               // Maybe replace at build time?
-	    vmBuild: "2024-07-04",                 // or replace at runtime by last-modified?
+	    vmBuild: "2024-09-04",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -15154,7 +15154,13 @@ function CpSystemPlugin() {
         // Array like objects
         if(obj.slice && obj.length !== undefined) {
           if(obj.BYTES_PER_ELEMENT) {
-            // TypedArray
+            // TypedArray (distinguish Floats and Integers)
+            if(obj.constructor === Float32Array || obj.constructor === Float64Array) {
+if(obj.constructor === Float64Array) {
+console.error("FOUND IT");
+}
+              return thisHandle.addSeenObj(seen, obj, this.makeStArray(obj, null, seen));
+            }
             switch(obj.BYTES_PER_ELEMENT) {
               case 1:
                 return thisHandle.addSeenObj(seen, obj, this.makeStByteArray(obj));
@@ -16095,7 +16101,7 @@ function CpSystemPlugin() {
         instance = this.vm.instantiateClass(proxyClass.isNil ? this.getProxyClassFor(jsInstance) : proxyClass, 0);
         instance.jsObj = jsInstance;
       } catch(e) {
-        console.error("Failed to instantiate class " + jsClass);
+        console.error("Failed to instantiate class " + jsClass, e);
       }
       return this.answer(argCount, instance);
     },
