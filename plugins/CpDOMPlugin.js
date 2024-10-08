@@ -339,6 +339,14 @@ function CpDOMPlugin() {
       domElement.textContent = textContent;
       return this.answerSelf(argCount);
     },
+    "primitiveDomElementLocalTextContent": function(argCount) {
+      if(argCount !== 0) return false;
+      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      if(!domElement) return false;
+      var textNodes = Array.prototype.filter.call(domElement.childNodes, function(childNode) { return childNode.nodeType === Node.TEXT_NODE; });
+      var textContent = textNodes.map(function(textNode) { return textNode.textContent; }).join("");
+      return this.answer(argCount, textContent);
+    },
     "primitiveDomElementMarkupContent": function(argCount) {
       if(argCount !== 0) return false;
       var domElement = this.interpreterProxy.stackValue(argCount).domElement;
