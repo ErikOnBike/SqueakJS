@@ -157,7 +157,8 @@ function setupFullscreen(display, canvas, options) {
 function recordModifiers(evt, display) {
     var shiftPressed = evt.shiftKey,
         ctrlPressed = evt.ctrlKey && !evt.altKey,
-        cmdPressed = display.isMac ? evt.metaKey : evt.altKey && !evt.ctrlKey,
+        cmdPressed = (display.isMac ? evt.metaKey : evt.altKey && !evt.ctrlKey)
+            || display.cmdButtonTouched,
         modifiers =
             (shiftPressed ? Squeak.Keyboard_Shift : 0) +
             (ctrlPressed ? Squeak.Keyboard_Ctrl : 0) +
@@ -225,11 +226,8 @@ function recordMouseEvent(what, evt, canvas, display, options) {
             display.signalInputEvent();
     }
     display.idle = 0;
-    if (what == 'mouseup') {
-        if (display.runFor) display.runFor(100); // maybe we catch the fullscreen flag change
-    } else {
-        if (display.runNow) display.runNow();   // don't wait for timeout to run
-    }
+    if (what === 'mouseup') display.runFor(100, what); // process copy/paste or fullscreen flag change
+    else display.runNow(what);   // don't wait for timeout to run
 }
 
 function recordWheelEvent(evt, display) {
@@ -252,6 +250,7 @@ function recordWheelEvent(evt, display) {
     if (display.signalInputEvent)
         display.signalInputEvent();
     display.idle = 0;
+    if (display.runNow) display.runNow('wheel'); // don't wait for timeout to run
 }
 
 // Squeak traditional keycodes are MacRoman
@@ -303,7 +302,7 @@ function recordKeyboardEvent(unicode, timestamp, display) {
         display.keys.push(modifiersAndKey);
     }
     display.idle = 0;
-    if (display.runNow) display.runNow(); // don't wait for timeout to run
+    if (display.runNow) display.runNow('keyboard'); // don't wait for timeout to run
 }
 
 function recordDragDropEvent(type, evt, canvas, display) {
@@ -320,6 +319,8 @@ function recordDragDropEvent(type, evt, canvas, display) {
     ]);
     if (display.signalInputEvent)
         display.signalInputEvent();
+    display.idle = 0;
+    if (display.runNow) display.runNow('drag-drop'); // don't wait for timeout to run
 }
 
 function fakeCmdOrCtrlKey(key, timestamp, display) {
@@ -355,9 +356,11 @@ function createSqueakDisplay(canvas, options) {
         mouseY: 0,
         buttons: 0,
         keys: [],
+        cmdButtonTouched: null, // touchscreen button pressed (touch ID)
         eventQueue: null, // only used if image uses event primitives
         clipboardString: '',
         clipboardStringChanged: false,
+        handlingEvent: '',  // set to 'mouse' or 'keyboard' while handling an event
         cursorCanvas: options.cursor !== false && document.getElementById("sqCursor") || document.createElement("canvas"),
         cursorOffsetX: 0,
         cursorOffsetY: 0,
@@ -444,7 +447,7 @@ function createSqueakDisplay(canvas, options) {
         ctx.fillStyle = style.color || "#F90";
         ctx.fillRect(x, y, w * value, h);
     };
-    display.executeClipboardPaste = function(text, timestamp) {
+    display.executeClipboardPasteKey = function(text, timestamp) {
         if (!display.vm) return true;
         try {
             display.clipboardString = text;
@@ -454,7 +457,7 @@ function createSqueakDisplay(canvas, options) {
             console.error("paste error " + err);
         }
     };
-    display.executeClipboardCopy = function(key, timestamp) {
+    display.executeClipboardCopyKey = function(key, timestamp) {
         if (!display.vm) return true;
         // simulate copy event for Squeak so it places its text in clipboard
         display.clipboardStringChanged = false;
@@ -505,10 +508,17 @@ function createSqueakDisplay(canvas, options) {
     function touchToMouse(evt) {
         if (evt.touches.length) {
             // average all touch positions
-            touch.x = touch.y = 0;
+            // but ignore the cmd button touch
+            var x = 0, y = 0, n = 0;
             for (var i = 0; i < evt.touches.length; i++) {
-                touch.x += evt.touches[i].pageX / evt.touches.length;
-                touch.y += evt.touches[i].pageY / evt.touches.length;
+                if (evt.touches[i].identifier === display.cmdButtonTouched) continue;
+                x += evt.touches[i].pageX;
+                y += evt.touches[i].pageY;
+                n++;
+            }
+            if (n > 0) {
+                touch.x = x / n;
+                touch.y = y / n;
             }
         }
         return {
@@ -615,12 +625,14 @@ function createSqueakDisplay(canvas, options) {
     // * if fingers moved significantly within 200ms of 2nd down, start zooming
     // * if touch ended within this time, generate click (down+up)
     // * otherwise, start mousing with 2nd button
+    // * also, ignore finger on cmd button
     // When mousing, always generate a move event before down event so that
     // mouseover eventhandlers in image work better
     canvas.ontouchstart = function(evt) {
         evt.preventDefault();
         var e = touchToMouse(evt);
         for (var i = 0; i < evt.changedTouches.length; i++) {
+            if (evt.changedTouches[i].identifier === display.cmdButtonTouched) continue;
             switch (touch.state) {
                 case 'idle':
                     touch.state = 'got1stFinger';
@@ -665,34 +677,39 @@ function createSqueakDisplay(canvas, options) {
                 break;
             case 'mousing':
                 recordMouseEvent('mousemove', e, canvas, display, options);
-                return;
+                break;
             case 'got2ndFinger':
                 if (evt.touches.length > 1)
                     touch.dist = dist(evt.touches[0], evt.touches[1]);
-                return;
+                break;
             case 'zooming':
                 zoomMove(evt);
-                return;
+                break;
         }
     };
     canvas.ontouchend = function(evt) {
         evt.preventDefault();
         checkFullscreen();
         var e = touchToMouse(evt);
+        var n = evt.touches.length;
+        if (Array.from(evt.touches).findIndex(t => t.identifier === display.cmdButtonTouched) >= 0) n--;
         for (var i = 0; i < evt.changedTouches.length; i++) {
+            if (evt.changedTouches[i].identifier === display.cmdButtonTouched) {
+                continue;
+            }
             switch (touch.state) {
                 case 'mousing':
-                    if (evt.touches.length > 0) break;
+                    if (n > 0) break;
                     touch.state = 'idle';
                     recordMouseEvent('mouseup', e, canvas, display, options);
-                    return;
+                    break;
                 case 'got1stFinger':
                     touch.state = 'idle';
                     touch.button = e.button = 0;
                     recordMouseEvent('mousemove', e, canvas, display, options);
                     recordMouseEvent('mousedown', e, canvas, display, options);
                     recordMouseEvent('mouseup', e, canvas, display, options);
-                    return;
+                    break;
                 case 'got2ndFinger':
                     touch.state = 'mousing';
                     touch.button = e.button = 2;
@@ -700,10 +717,10 @@ function createSqueakDisplay(canvas, options) {
                     recordMouseEvent('mousedown', e, canvas, display, options);
                     break;
                 case 'zooming':
-                    if (evt.touches.length > 0) break;
+                    if (n > 0) break;
                     touch.state = 'idle';
                     zoomEnd(evt);
-                    return;
+                    break;
             }
         }
     };
@@ -730,27 +747,53 @@ function createSqueakDisplay(canvas, options) {
     input.setAttribute("autocapitalize", "off");
     input.setAttribute("spellcheck", "false");
     input.style.position = "absolute";
-    input.style.width = "0";
-    input.style.height = "0";
-    input.style.opacity = "0";
-    input.style.pointerEvents = "none";
+    input.style.left = "-1000px";
     canvas.parentElement.appendChild(input);
-    // touch-keyboard button
+    // touch-keyboard buttons
     if ('ontouchstart' in document) {
+        // button to show on-screen keyboard
         var keyboardButton = document.createElement('div');
         keyboardButton.innerHTML = '<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg width="50px" height="50px" viewBox="0 0 150 150" version="1.1" xmlns="http://www.w3.org/2000/svg"><g id="Page-1" stroke="none" fill="#000000"><rect x="33" y="105" width="10" height="10" rx="1"></rect><rect x="26" y="60" width="10" height="10" rx="1"></rect><rect x="41" y="60" width="10" height="10" rx="1"></rect><rect x="56" y="60" width="10" height="10" rx="1"></rect><rect x="71" y="60" width="10" height="10" rx="1"></rect><rect x="86" y="60" width="10" height="10" rx="1"></rect><rect x="101" y="60" width="10" height="10" rx="1"></rect><rect x="116" y="60" width="10" height="10" rx="1"></rect><rect x="108" y="105" width="10" height="10" rx="1"></rect><rect x="33" y="75" width="10" height="10" rx="1"></rect><rect x="48" y="75" width="10" height="10" rx="1"></rect><rect x="63" y="75" width="10" height="10" rx="1"></rect><rect x="78" y="75" width="10" height="10" rx="1"></rect><rect x="93" y="75" width="10" height="10" rx="1"></rect><rect x="108" y="75" width="10" height="10" rx="1"></rect><rect x="41" y="90" width="10" height="10" rx="1"></rect><rect x="26" y="90" width="10" height="10" rx="1"></rect><rect x="56" y="90" width="10" height="10" rx="1"></rect><rect x="71" y="90" width="10" height="10" rx="1"></rect><rect x="86" y="90" width="10" height="10" rx="1"></rect><rect x="101" y="90" width="10" height="10" rx="1"></rect><rect x="116" y="90" width="10" height="10" rx="1"></rect><rect x="48" y="105" width="55" height="10" rx="1"></rect><path d="M20.0056004,51 C18.3456532,51 17.0000001,52.3496496 17.0000001,54.0038284 L17.0000001,85.6824519 L17,120.003453 C17.0000001,121.6584 18.3455253,123 20.0056004,123 L131.9944,123 C133.654347,123 135,121.657592 135,119.997916 L135,54.0020839 C135,52.3440787 133.654475,51 131.9944,51 L20.0056004,51 Z" fill="none" stroke="#000000" stroke-width="2"></path><path d="M52.0410156,36.6054687 L75.5449219,21.6503905 L102.666016,36.6054687" id="Line" stroke="#000000" stroke-width="3" stroke-linecap="round" fill="none"></path></g></svg>';
         keyboardButton.setAttribute('style', 'position:fixed;right:0;bottom:0;background-color:rgba(128,128,128,0.5);border-radius:5px');
         canvas.parentElement.appendChild(keyboardButton);
         keyboardButton.onmousedown = function(evt) {
             // show on-screen keyboard
-            input.focus();
+            input.focus({ preventScroll: true });
             evt.preventDefault();
         }
         keyboardButton.ontouchstart = keyboardButton.onmousedown;
+        // modifier button for CMD key
+        var cmdButton = document.createElement('div');
+        cmdButton.innerHTML = '⌘';
+        cmdButton.setAttribute('style', 'position:fixed;left:0;background-color:rgba(128,128,128,0.5);width:50px;height:50px;font-size:30px;text-align:center;vertical-align:middle;line-height:50px;border-radius:5px');
+        if (window.visualViewport) {
+            // fix position of button when virtual keyboard is shown
+            const vv = window.visualViewport;
+            const fixPosition = () => cmdButton.style.top = `${vv.height}px`;
+            vv.addEventListener('resize', fixPosition);
+            cmdButton.style.transform = `translateY(-100%)`;
+            fixPosition();
+        } else {
+            cmdButton.style.bottom = '0';
+        }
+        canvas.parentElement.appendChild(cmdButton);
+        cmdButton.ontouchstart = function(evt) {
+            display.cmdButtonTouched = evt.changedTouches[0].identifier;
+            cmdButton.style.backgroundColor = 'rgba(255,255,255,0.5)';
+            evt.preventDefault();
+            evt.stopPropagation();
+        }
+        cmdButton.ontouchend = function(evt) {
+            display.cmdButtonTouched = null;
+            cmdButton.style.backgroundColor = 'rgba(128,128,128,0.5)';
+            evt.preventDefault();
+            evt.stopPropagation();
+        }
+        cmdButton.ontouchcancel = cmdButton.ontouchend;
     } else {
         // keep focus on input field
-        input.onblur = function() { input.focus(); };
-        input.focus();
+        input.onblur = function() { input.focus({ preventScroll: true }); };
+        input.focus({ preventScroll: true });
     }
     display.isMac = navigator.userAgent.includes("Mac");
     // emulate keypress events
@@ -784,7 +827,7 @@ function createSqueakDisplay(canvas, options) {
                 deadChars = deadChars.concat(chars);
             }
         }
-        if (!deadChars.length) input.value = "";  // clear input
+        if (!deadChars.length) resetInput();
     };
     input.onkeydown = function(evt) {
         checkFullscreen();
@@ -818,18 +861,18 @@ function createSqueakDisplay(canvas, options) {
             switch (evt.key) {
                 case "c":
                 case "x":
-                    if (!navigator.clipboard?.writeText) return; // fire document.oncopy/oncut
-                    var text = display.executeClipboardCopy(evt.key, evt.timeStamp);
+                    if (!navigator.clipboard) return; // fire document.oncopy/oncut
+                    var text = display.executeClipboardCopyKey(evt.key, evt.timeStamp);
                     if (typeof text === 'string') {
                         navigator.clipboard.writeText(text)
                             .catch(function(err) { console.error("display: copy error " + err.message); });
                     }
                     return evt.preventDefault();
                 case "v":
-                    if (!navigator.clipboard?.readText) return; // fire document.onpaste
+                    if (!navigator.clipboard) return; // fire document.onpaste
                     navigator.clipboard.readText()
                         .then(function(text) {
-                            display.executeClipboardPaste(text, evt.timeStamp);
+                            display.executeClipboardPasteKey(text, evt.timeStamp);
                         })
                         .catch(function(err) { console.error("display: paste error " + err.message); });
                     return evt.preventDefault();
@@ -847,10 +890,47 @@ function createSqueakDisplay(canvas, options) {
         if (!display.vm) return true;
         recordModifiers(evt, display);
     };
-    // copy/paste old-style
-    if (!navigator.clipboard?.writeText) {
+    function resetInput() {
+        input.value = "**";
+        input.selectionStart = 1;
+        input.selectionEnd = 1;
+    }
+    resetInput();
+    // hack to generate arrow keys when moving the cursor (e.g. via spacebar on iPhone)
+    // we're not getting any events for that but the cursor (selection) changes
+    if ('ontouchstart' in document) {
+        let count = 0; // count how often the interval has run after the first move
+        setInterval(() => {
+            const direction = input.selectionStart - 1;
+            if (direction === 0) {
+                count = 0;
+                return;
+            }
+            // move cursor once, then not for 500ms, then every 250ms
+            if (count === 0 || count > 2) {
+                const key = direction < 1 ? 28 : 29; // arrow left or right
+                recordKeyboardEvent(key, Date.now(), display);
+            }
+            input.selectionStart = 1;
+            input.selectionEnd = 1;
+            count++;
+        }, 250);
+    }
+    // more copy/paste
+    if (navigator.clipboard) {
+        // new-style copy/paste (all modern browsers)
+        display.readFromSystemClipboard = () => display.handlingEvent &&
+            navigator.clipboard.readText()
+            .then(text => display.clipboardString = text)
+            .catch(err => console.error("readFromSystemClipboard " + err.message));
+        display.writeToSystemClipboard = () => display.handlingEvent &&
+            navigator.clipboard.writeText(display.clipboardString)
+            .then(() => display.clipboardStringChanged = false)
+            .catch(err => console.error("writeToSystemClipboard " + err.message));
+    } else {
+        // old-style copy/paste
         document.oncopy = function(evt, key) {
-            var text = display.executeClipboardCopy(key, evt.timeStamp);
+            var text = display.executeClipboardCopyKey(key, evt.timeStamp);
             if (typeof text === 'string') {
                 evt.clipboardData.setData("Text", text);
             }
@@ -860,11 +940,9 @@ function createSqueakDisplay(canvas, options) {
             if (!display.vm) return true;
             document.oncopy(evt, 'x');
         };
-    }
-    if (!navigator.clipboard?.readText) {
         document.onpaste = function(evt) {
             var text = evt.clipboardData.getData('Text');
-            display.executeClipboardPaste(text, evt.timeStamp);
+            display.executeClipboardPasteKey(text, evt.timeStamp);
             evt.preventDefault();
         };
     }
@@ -1068,15 +1146,17 @@ SqueakJS.runImage = function(buffer, name, display, options) {
                     alert(error);
                 }
             }
-            display.runNow = function() {
+            display.runNow = function(event) {
                 window.clearTimeout(loop);
+                display.handlingEvent = event;
                 run();
+                display.handlingEvent = '';
             };
-            display.runFor = function(milliseconds) {
+            display.runFor = function(milliseconds, event) {
                 var stoptime = Date.now() + milliseconds;
                 do {
                     if (display.quitFlag) return;
-                    display.runNow();
+                    display.runNow(event);
                 } while (Date.now() < stoptime);
             };
             if (options.onStart) options.onStart(vm, display, options);

@@ -116,8 +116,8 @@
     Object.extend(Squeak,
     "version", {
         // system attributes
-        vmVersion: "SqueakJS 1.2.0",
-        vmDate: "2024-03-25",               // Maybe replace at build time?
+        vmVersion: "SqueakJS 1.2.3",
+        vmDate: "2024-09-28",               // Maybe replace at build time?
         vmBuild: "unknown",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
@@ -1409,7 +1409,11 @@
         Objects are tenured to old space during a full GC.
         New objects are only referenced by other objects' pointers, and thus can be garbage-collected
         at any time by the Javascript GC.
-        A partial GC links new objects to support enumeration of new space.
+        A partial GC creates a linked list of new objects reachable from old space. We call this
+        list "young space". It is not stored, but only created by primitives like nextObject,
+        nextInstance, or become to support enumeration of new space.
+        To efficiently find potential young space roots, any write to an instance variable sets
+        the "dirty" flag of the object, allowing to skip clean objects.
 
         Weak references are finalized by a full GC. A partial GC only finalizes young weak references.
 
@@ -1808,10 +1812,9 @@
             // sorting them by id, and then linking them into old space.
             this.vm.addMessage("fullGC: " + reason);
             var start = Date.now();
-            var previousNew = this.newSpaceCount;
-            var previousYoung = this.youngSpaceCount;
+            var previousNew = this.newSpaceCount; // includes young and newly allocated
             var previousOld = this.oldSpaceCount;
-            var newObjects = this.markReachableObjects();
+            var newObjects = this.markReachableObjects(); // technically these are young objects
             this.removeUnmarkedOldObjects();
             this.appendToOldObjects(newObjects);
             this.finalizeWeakReferences();
@@ -1821,11 +1824,20 @@
             this.hasNewInstances = {};
             this.gcCount++;
             this.gcMilliseconds += Date.now() - start;
-            var delta = previousOld - this.oldSpaceCount;
-            console.log("Full GC (" + reason + "): " + (Date.now() - start) + " ms, " +
-                "surviving objects: " + this.oldSpaceCount + " (" + this.oldSpaceBytes + " bytes), " +
-                "tenured " + newObjects.length + " (total " + (delta > 0 ? "+" : "") + delta + "), " +
-                "gc'ed " + previousYoung + " young and " + (previousNew - previousYoung) + " new objects");
+            var delta = previousOld - this.oldSpaceCount; // absolute change
+            var survivingNew = newObjects.length;
+            var survivingOld = this.oldSpaceCount - survivingNew;
+            var gcedNew = previousNew - survivingNew;
+            var gcedOld = previousOld - survivingOld;
+            console.log("Full GC (" + reason + "): " + (Date.now() - start) + " ms;" +
+                " before: " + previousOld.toLocaleString() + " old objects;" +
+                " allocated " + previousNew.toLocaleString() + " new;" +
+                " surviving " + survivingOld.toLocaleString() + " old;" +
+                " tenuring " + survivingNew.toLocaleString() + " new;" +
+                " gc'ed " + gcedOld.toLocaleString() + " old and " + gcedNew.toLocaleString() + " new;" +
+                " total now: " + this.oldSpaceCount.toLocaleString() + " (" + (delta > 0 ? "+" : "") + delta.toLocaleString() + ", "
+                + this.oldSpaceBytes.toLocaleString() + " bytes)"
+                );
 
             return newObjects.length > 0 ? newObjects[0] : null;
         },
@@ -1836,7 +1848,7 @@
         },
         markReachableObjects: function() {
             // FullGC: Visit all reachable objects and mark them.
-            // Return surviving new objects
+            // Return surviving new objects (young objects to be tenured).
             // Contexts are handled specially: they have garbage beyond the stack pointer
             // which must not be traced, and is cleared out here
             // In weak objects, only the inst vars are traced
@@ -1986,8 +1998,8 @@
             this.pgcCount++;
             this.pgcMilliseconds += Date.now() - start;
             console.log("Partial GC (" + reason+ "): " + (Date.now() - start) + " ms, " +
-                "found " + this.youngRootsCount + " roots in " + this.oldSpaceCount + " old, " +
-                "kept " + this.youngSpaceCount + " young (" + (previous - this.youngSpaceCount) + " gc'ed)");
+                "found " + this.youngRootsCount.toLocaleString() + " roots in " + this.oldSpaceCount.toLocaleString() + " old, " +
+                "kept " + this.youngSpaceCount.toLocaleString() + " young (" + (previous - this.youngSpaceCount).toLocaleString() + " gc'ed)");
             return young[0];
         },
         youngRoots: function() {
@@ -3064,37 +3076,37 @@
 
                 // Arithmetic Ops... + - < > <= >= = ~=    * /  @ lshift: lxor: land: lor:
                 case 0xB0: this.success = true; this.resultIsFloat = false;
-                    if(!this.pop2AndPushNumResult(this.stackIntOrFloat(1) + this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // PLUS +
+                    if (!this.pop2AndPushNumResult(this.stackIntOrFloat(1) + this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // PLUS +
                 case 0xB1: this.success = true; this.resultIsFloat = false;
-                    if(!this.pop2AndPushNumResult(this.stackIntOrFloat(1) - this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // MINUS -
+                    if (!this.pop2AndPushNumResult(this.stackIntOrFloat(1) - this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // MINUS -
                 case 0xB2: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) < this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // LESS <
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) < this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // LESS <
                 case 0xB3: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) > this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // GRTR >
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) > this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // GRTR >
                 case 0xB4: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) <= this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // LEQ <=
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) <= this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // LEQ <=
                 case 0xB5: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) >= this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // GEQ >=
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) >= this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // GEQ >=
                 case 0xB6: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) === this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // EQU =
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) === this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // EQU =
                 case 0xB7: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) !== this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // NEQ ~=
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) !== this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // NEQ ~=
                 case 0xB8: this.success = true; this.resultIsFloat = false;
-                    if(!this.pop2AndPushNumResult(this.stackIntOrFloat(1) * this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // TIMES *
+                    if (!this.pop2AndPushNumResult(this.stackIntOrFloat(1) * this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // TIMES *
                 case 0xB9: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.quickDivide(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // Divide /
+                    if (!this.pop2AndPushIntResult(this.quickDivide(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // Divide /
                 case 0xBA: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.mod(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // MOD \
+                    if (!this.pop2AndPushIntResult(this.mod(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // MOD \
                 case 0xBB: this.success = true;
-                    if(!this.primHandler.primitiveMakePoint(1, true)) this.sendSpecial(b&0xF); return;  // MakePt int@int
+                    if (!this.primHandler.primitiveMakePoint(1, true)) this.sendSpecial(b&0xF); return;  // MakePt int@int
                 case 0xBC: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.safeShift(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return; // bitShift:
+                    if (!this.pop2AndPushIntResult(this.safeShift(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return; // bitShift:
                 case 0xBD: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.div(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // Divide //
+                    if (!this.pop2AndPushIntResult(this.div(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // Divide //
                 case 0xBE: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.stackInteger(1) & this.stackInteger(0))) this.sendSpecial(b&0xF); return; // bitAnd:
+                    if (!this.pop2AndPushIntResult(this.stackInteger(1) & this.stackInteger(0))) this.sendSpecial(b&0xF); return; // bitAnd:
                 case 0xBF: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.stackInteger(1) | this.stackInteger(0))) this.sendSpecial(b&0xF); return; // bitOr:
+                    if (!this.pop2AndPushIntResult(this.stackInteger(1) | this.stackInteger(0))) this.sendSpecial(b&0xF); return; // bitOr:
 
                 // at:, at:put:, size, next, nextPut:, ...
                 case 0xC0: case 0xC1: case 0xC2: case 0xC3: case 0xC4: case 0xC5: case 0xC6: case 0xC7:
@@ -3178,37 +3190,37 @@
 
                  // Arithmetic Ops... + - < > <= >= = ~=    * /  @ lshift: lxor: land: lor:
                  case 0x60: this.success = true; this.resultIsFloat = false;
-                    if(!this.pop2AndPushNumResult(this.stackIntOrFloat(1) + this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // PLUS +
+                    if (!this.pop2AndPushNumResult(this.stackIntOrFloat(1) + this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // PLUS +
                 case 0x61: this.success = true; this.resultIsFloat = false;
-                    if(!this.pop2AndPushNumResult(this.stackIntOrFloat(1) - this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // MINUS -
+                    if (!this.pop2AndPushNumResult(this.stackIntOrFloat(1) - this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // MINUS -
                 case 0x62: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) < this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // LESS <
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) < this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // LESS <
                 case 0x63: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) > this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // GRTR >
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) > this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // GRTR >
                 case 0x64: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) <= this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // LEQ <=
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) <= this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // LEQ <=
                 case 0x65: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) >= this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // GEQ >=
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) >= this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // GEQ >=
                 case 0x66: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) === this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // EQU =
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) === this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // EQU =
                 case 0x67: this.success = true;
-                    if(!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) !== this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // NEQ ~=
+                    if (!this.pop2AndPushBoolResult(this.stackIntOrFloat(1) !== this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // NEQ ~=
                 case 0x68: this.success = true; this.resultIsFloat = false;
-                    if(!this.pop2AndPushNumResult(this.stackIntOrFloat(1) * this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // TIMES *
+                    if (!this.pop2AndPushNumResult(this.stackIntOrFloat(1) * this.stackIntOrFloat(0))) this.sendSpecial(b&0xF); return;  // TIMES *
                 case 0x69: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.quickDivide(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // Divide /
+                    if (!this.pop2AndPushIntResult(this.quickDivide(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // Divide /
                 case 0x6A: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.mod(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // MOD \
+                    if (!this.pop2AndPushIntResult(this.mod(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // MOD \
                 case 0x6B: this.success = true;
-                    if(!this.primHandler.primitiveMakePoint(1, true)) this.sendSpecial(b&0xF); return;  // MakePt int@int
+                    if (!this.primHandler.primitiveMakePoint(1, true)) this.sendSpecial(b&0xF); return;  // MakePt int@int
                 case 0x6C: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.safeShift(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return; // bitShift:
+                    if (!this.pop2AndPushIntResult(this.safeShift(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return; // bitShift:
                 case 0x6D: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.div(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // Divide //
+                    if (!this.pop2AndPushIntResult(this.div(this.stackInteger(1),this.stackInteger(0)))) this.sendSpecial(b&0xF); return;  // Divide //
                 case 0x6E: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.stackInteger(1) & this.stackInteger(0))) this.sendSpecial(b&0xF); return; // bitAnd:
+                    if (!this.pop2AndPushIntResult(this.stackInteger(1) & this.stackInteger(0))) this.sendSpecial(b&0xF); return; // bitAnd:
                 case 0x6F: this.success = true;
-                    if(!this.pop2AndPushIntResult(this.stackInteger(1) | this.stackInteger(0))) this.sendSpecial(b&0xF); return; // bitOr:
+                    if (!this.pop2AndPushIntResult(this.stackInteger(1) | this.stackInteger(0))) this.sendSpecial(b&0xF); return; // bitOr:
 
                 // at:, at:put:, size, next, nextPut:, ...
                 case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x76: case 0x77:
@@ -3431,7 +3443,7 @@
                 var sema = this.specialObjects[Squeak.splOb_TheLowSpaceSemaphore];
                 if (!sema.isNil) this.primHandler.synchronousSignal(sema);
             }
-            //  if(now >= nextPollTick) {
+            //  if (now >= nextPollTick) {
             //            ioProcessEvents(); //sets interruptPending if interrupt key pressed
             //            nextPollTick= now + 500; } //msecs to wait before next call to ioProcessEvents"
             if (this.interruptPending) {
@@ -4900,8 +4912,8 @@
         },
         stObjectatput: function(array, index, obj) {
             if (array.sqClass !== this.classArray()) throw Error("Array expected");
-            if (index < 1 || index >= array.pointers.length) return this.successFlag = false;
-            array.pointers[index] = obj;
+            if (index < 1 || index > array.pointers.length) return this.successFlag = false;
+            array.pointers[index-1] = obj;
         },
     },
     'constant access',
@@ -6711,8 +6723,16 @@
             return this.popNandPushIfOK(argCount+1, this.makeLargeIfNeeded(bytes));
         },
         primitivePartialGC: function(argCount) {
-            this.vm.image.partialGC("primitive");
-            var bytes = this.vm.image.bytesLeft();
+            var young = this.vm.image.partialGC("primitive");
+            var youngSpaceBytes = 0;
+            while (young) {
+                youngSpaceBytes += young.totalBytes();
+                young = young.nextObject;
+            }
+            console.log("    old space: " + this.vm.image.oldSpaceBytes.toLocaleString() + " bytes, " +
+                "young space: " + youngSpaceBytes.toLocaleString() + " bytes, " +
+                "total: " + (this.vm.image.oldSpaceBytes + youngSpaceBytes).toLocaleString() + " bytes");
+            var bytes = this.vm.image.bytesLeft() - youngSpaceBytes;
             return this.popNandPushIfOK(argCount+1, this.makeLargeIfNeeded(bytes));
         },
         primitiveMakePoint: function(argCount, checkNumbers) {
@@ -7005,8 +7025,8 @@
             var rcvr = this.vm.stackValue(1);
             var sqArgCount = this.stackInteger(0);
             var homeCtxt = rcvr;
-            if(!this.vm.isContext(homeCtxt)) this.success = false;
-            if(!this.success) return rcvr;
+            if (!this.vm.isContext(homeCtxt)) this.success = false;
+            if (!this.success) return rcvr;
             if (typeof homeCtxt.pointers[Squeak.Context_method] === "number")
                 // ctxt is itself a block; get the context for its enclosing method
                 homeCtxt = homeCtxt.pointers[Squeak.BlockContext_home];
@@ -7597,7 +7617,7 @@
             this.vm.image.fullGC("snapshot");               // before cleanup so traversal works
             var buffer = this.vm.image.writeToBuffer();
             // Write snapshot if files are supported
-            if(Squeak.flushAllFiles) {
+            if (Squeak.flushAllFiles) {
                 Squeak.flushAllFiles();                         // so there are no more writes pending
                 Squeak.filePut(this.vm.image.name, buffer);
             }
@@ -7606,7 +7626,7 @@
         },
         primitiveQuit: function(argCount) {
             // Flush any files if files are supported
-            if(Squeak.flushAllFiles)
+            if (Squeak.flushAllFiles)
                 Squeak.flushAllFiles();
             this.display.quitFlag = true;
             this.vm.breakNow("quit");
@@ -10051,14 +10071,39 @@
     Object.extend(Squeak.Primitives.prototype,
     'input', {
         primitiveClipboardText: function(argCount) {
+            // There are two ways this primitive is invoked:
+            // 1: via the DOM keyboard event thandler in squeak.js that intercepts cmd-c/cmd-v,
+            //    reads/writes the system clipboard from/to display.clipboardString
+            //    and then the interpreter calls the primitive
+            // 2: via the image code e.g. a menu copy/paste item, which calls the primitive
+            //    and we try to read/write the system clipboard directly.
+            //    To support this, squeak.js keeps running the interpreter for 100 ms within
+            //    the DOM event 'mouseup' handler so the code below runs in the click-handler context,
+            //    (otherwise the browser would block access to the clipboard)
             if (argCount === 0) { // read from clipboard
-                if (typeof(this.display.clipboardString) !== 'string') return false;
-                this.vm.popNandPush(1, this.makeStString(this.display.clipboardString));
+                // Try to read from system clipboard, which is async if available.
+                // It will likely fail outside of an event handler.
+                var clipBoardPromise = null;
+                if (this.display.readFromSystemClipboard) clipBoardPromise = this.display.readFromSystemClipboard();
+                if (clipBoardPromise) {
+                    var unfreeze = this.vm.freeze();
+                    clipBoardPromise
+                        .then(() => this.vm.popNandPush(1, this.makeStString(this.display.clipboardString)))
+                        .catch(() => this.vm.popNandPush(1, this.vm.nilObj))
+                        .finally(unfreeze);
+                } else {
+                    if (typeof(this.display.clipboardString) !== 'string') return false;
+                    this.vm.popNandPush(1, this.makeStString(this.display.clipboardString));
+                }
             } else if (argCount === 1) { // write to clipboard
                 var stringObj = this.vm.top();
                 if (stringObj.bytes) {
                     this.display.clipboardString = stringObj.bytesAsString();
-                    this.display.clipboardStringChanged = true;
+                    this.display.clipboardStringChanged = true; // means it should be written to system clipboard
+                    if (this.display.writeToSystemClipboard) {
+                        // no need to wait for the promise
+                        this.display.writeToSystemClipboard();
+                    }
                 }
                 this.vm.pop();
             }
@@ -10095,7 +10140,6 @@
             this.display.signalInputEvent = function() {
                 this.signalSemaphoreWithIndex(this.inputEventSemaIndex);
             }.bind(this);
-            this.display.signalInputEvent();
             return this.popNIfOK(argCount);
         },
         primitiveInputWord: function(argCount) {
@@ -40269,7 +40313,7 @@
               if (this.status == plugin.Socket_Connected ||
                   this.status == plugin.Socket_OtherEndClosed ||
                   this.status == plugin.Socket_WaitingForConnection) {
-                if(this.webSocket) {
+                if (this.webSocket) {
                   this.webSocket.close();
                   this.webSocket = null;
                 }
@@ -56181,7 +56225,8 @@
     function recordModifiers(evt, display) {
         var shiftPressed = evt.shiftKey,
             ctrlPressed = evt.ctrlKey && !evt.altKey,
-            cmdPressed = display.isMac ? evt.metaKey : evt.altKey && !evt.ctrlKey,
+            cmdPressed = (display.isMac ? evt.metaKey : evt.altKey && !evt.ctrlKey)
+                || display.cmdButtonTouched,
             modifiers =
                 (shiftPressed ? Squeak.Keyboard_Shift : 0) +
                 (ctrlPressed ? Squeak.Keyboard_Ctrl : 0) +
@@ -56190,9 +56235,15 @@
         return modifiers;
     }
 
-    var canUseMouseOffset = navigator.userAgent.match("AppleWebKit/");
+    var canUseMouseOffset = null;
 
     function updateMousePos(evt, canvas, display) {
+        if (canUseMouseOffset === null) {
+            // Per https://caniuse.com/mdn-api_mouseevent_offsetx, essentially all *current*
+            // browsers support `offsetX`/`offsetY`, but it does little harm to fall back to the
+            // older `layerX`/`layerY` for now.
+            canUseMouseOffset = 'offsetX' in evt;
+        }
         var evtX = canUseMouseOffset ? evt.offsetX : evt.layerX,
             evtY = canUseMouseOffset ? evt.offsetY : evt.layerY;
         if (display.cursorCanvas) {
@@ -56243,11 +56294,8 @@
                 display.signalInputEvent();
         }
         display.idle = 0;
-        if (what == 'mouseup') {
-            if (display.runFor) display.runFor(100); // maybe we catch the fullscreen flag change
-        } else {
-            if (display.runNow) display.runNow();   // don't wait for timeout to run
-        }
+        if (what === 'mouseup') display.runFor(100, what); // process copy/paste or fullscreen flag change
+        else display.runNow(what);   // don't wait for timeout to run
     }
 
     function recordWheelEvent(evt, display) {
@@ -56270,6 +56318,7 @@
         if (display.signalInputEvent)
             display.signalInputEvent();
         display.idle = 0;
+        if (display.runNow) display.runNow('wheel'); // don't wait for timeout to run
     }
 
     // Squeak traditional keycodes are MacRoman
@@ -56321,7 +56370,7 @@
             display.keys.push(modifiersAndKey);
         }
         display.idle = 0;
-        if (display.runNow) display.runNow(); // don't wait for timeout to run
+        if (display.runNow) display.runNow('keyboard'); // don't wait for timeout to run
     }
 
     function recordDragDropEvent(type, evt, canvas, display) {
@@ -56338,6 +56387,8 @@
         ]);
         if (display.signalInputEvent)
             display.signalInputEvent();
+        display.idle = 0;
+        if (display.runNow) display.runNow('drag-drop'); // don't wait for timeout to run
     }
 
     function fakeCmdOrCtrlKey(key, timestamp, display) {
@@ -56373,9 +56424,11 @@
             mouseY: 0,
             buttons: 0,
             keys: [],
+            cmdButtonTouched: null, // touchscreen button pressed (touch ID)
             eventQueue: null, // only used if image uses event primitives
             clipboardString: '',
             clipboardStringChanged: false,
+            handlingEvent: '',  // set to 'mouse' or 'keyboard' while handling an event
             cursorCanvas: options.cursor !== false && document.getElementById("sqCursor") || document.createElement("canvas"),
             cursorOffsetX: 0,
             cursorOffsetY: 0,
@@ -56462,7 +56515,7 @@
             ctx.fillStyle = style.color || "#F90";
             ctx.fillRect(x, y, w * value, h);
         };
-        display.executeClipboardPaste = function(text, timestamp) {
+        display.executeClipboardPasteKey = function(text, timestamp) {
             if (!display.vm) return true;
             try {
                 display.clipboardString = text;
@@ -56472,7 +56525,7 @@
                 console.error("paste error " + err);
             }
         };
-        display.executeClipboardCopy = function(key, timestamp) {
+        display.executeClipboardCopyKey = function(key, timestamp) {
             if (!display.vm) return true;
             // simulate copy event for Squeak so it places its text in clipboard
             display.clipboardStringChanged = false;
@@ -56523,10 +56576,17 @@
         function touchToMouse(evt) {
             if (evt.touches.length) {
                 // average all touch positions
-                touch.x = touch.y = 0;
+                // but ignore the cmd button touch
+                var x = 0, y = 0, n = 0;
                 for (var i = 0; i < evt.touches.length; i++) {
-                    touch.x += evt.touches[i].pageX / evt.touches.length;
-                    touch.y += evt.touches[i].pageY / evt.touches.length;
+                    if (evt.touches[i].identifier === display.cmdButtonTouched) continue;
+                    x += evt.touches[i].pageX;
+                    y += evt.touches[i].pageY;
+                    n++;
+                }
+                if (n > 0) {
+                    touch.x = x / n;
+                    touch.y = y / n;
                 }
             }
             return {
@@ -56632,12 +56692,14 @@
         // * if fingers moved significantly within 200ms of 2nd down, start zooming
         // * if touch ended within this time, generate click (down+up)
         // * otherwise, start mousing with 2nd button
+        // * also, ignore finger on cmd button
         // When mousing, always generate a move event before down event so that
         // mouseover eventhandlers in image work better
         canvas.ontouchstart = function(evt) {
             evt.preventDefault();
             var e = touchToMouse(evt);
             for (var i = 0; i < evt.changedTouches.length; i++) {
+                if (evt.changedTouches[i].identifier === display.cmdButtonTouched) continue;
                 switch (touch.state) {
                     case 'idle':
                         touch.state = 'got1stFinger';
@@ -56682,34 +56744,39 @@
                     break;
                 case 'mousing':
                     recordMouseEvent('mousemove', e, canvas, display, options);
-                    return;
+                    break;
                 case 'got2ndFinger':
                     if (evt.touches.length > 1)
                         touch.dist = dist(evt.touches[0], evt.touches[1]);
-                    return;
+                    break;
                 case 'zooming':
                     zoomMove(evt);
-                    return;
+                    break;
             }
         };
         canvas.ontouchend = function(evt) {
             evt.preventDefault();
             checkFullscreen();
             var e = touchToMouse(evt);
+            var n = evt.touches.length;
+            if (Array.from(evt.touches).findIndex(t => t.identifier === display.cmdButtonTouched) >= 0) n--;
             for (var i = 0; i < evt.changedTouches.length; i++) {
+                if (evt.changedTouches[i].identifier === display.cmdButtonTouched) {
+                    continue;
+                }
                 switch (touch.state) {
                     case 'mousing':
-                        if (evt.touches.length > 0) break;
+                        if (n > 0) break;
                         touch.state = 'idle';
                         recordMouseEvent('mouseup', e, canvas, display, options);
-                        return;
+                        break;
                     case 'got1stFinger':
                         touch.state = 'idle';
                         touch.button = e.button = 0;
                         recordMouseEvent('mousemove', e, canvas, display, options);
                         recordMouseEvent('mousedown', e, canvas, display, options);
                         recordMouseEvent('mouseup', e, canvas, display, options);
-                        return;
+                        break;
                     case 'got2ndFinger':
                         touch.state = 'mousing';
                         touch.button = e.button = 2;
@@ -56717,10 +56784,10 @@
                         recordMouseEvent('mousedown', e, canvas, display, options);
                         break;
                     case 'zooming':
-                        if (evt.touches.length > 0) break;
+                        if (n > 0) break;
                         touch.state = 'idle';
                         zoomEnd();
-                        return;
+                        break;
                 }
             }
         };
@@ -56747,27 +56814,53 @@
         input.setAttribute("autocapitalize", "off");
         input.setAttribute("spellcheck", "false");
         input.style.position = "absolute";
-        input.style.width = "0";
-        input.style.height = "0";
-        input.style.opacity = "0";
-        input.style.pointerEvents = "none";
+        input.style.left = "-1000px";
         canvas.parentElement.appendChild(input);
-        // touch-keyboard button
+        // touch-keyboard buttons
         if ('ontouchstart' in document) {
+            // button to show on-screen keyboard
             var keyboardButton = document.createElement('div');
             keyboardButton.innerHTML = '<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg width="50px" height="50px" viewBox="0 0 150 150" version="1.1" xmlns="http://www.w3.org/2000/svg"><g id="Page-1" stroke="none" fill="#000000"><rect x="33" y="105" width="10" height="10" rx="1"></rect><rect x="26" y="60" width="10" height="10" rx="1"></rect><rect x="41" y="60" width="10" height="10" rx="1"></rect><rect x="56" y="60" width="10" height="10" rx="1"></rect><rect x="71" y="60" width="10" height="10" rx="1"></rect><rect x="86" y="60" width="10" height="10" rx="1"></rect><rect x="101" y="60" width="10" height="10" rx="1"></rect><rect x="116" y="60" width="10" height="10" rx="1"></rect><rect x="108" y="105" width="10" height="10" rx="1"></rect><rect x="33" y="75" width="10" height="10" rx="1"></rect><rect x="48" y="75" width="10" height="10" rx="1"></rect><rect x="63" y="75" width="10" height="10" rx="1"></rect><rect x="78" y="75" width="10" height="10" rx="1"></rect><rect x="93" y="75" width="10" height="10" rx="1"></rect><rect x="108" y="75" width="10" height="10" rx="1"></rect><rect x="41" y="90" width="10" height="10" rx="1"></rect><rect x="26" y="90" width="10" height="10" rx="1"></rect><rect x="56" y="90" width="10" height="10" rx="1"></rect><rect x="71" y="90" width="10" height="10" rx="1"></rect><rect x="86" y="90" width="10" height="10" rx="1"></rect><rect x="101" y="90" width="10" height="10" rx="1"></rect><rect x="116" y="90" width="10" height="10" rx="1"></rect><rect x="48" y="105" width="55" height="10" rx="1"></rect><path d="M20.0056004,51 C18.3456532,51 17.0000001,52.3496496 17.0000001,54.0038284 L17.0000001,85.6824519 L17,120.003453 C17.0000001,121.6584 18.3455253,123 20.0056004,123 L131.9944,123 C133.654347,123 135,121.657592 135,119.997916 L135,54.0020839 C135,52.3440787 133.654475,51 131.9944,51 L20.0056004,51 Z" fill="none" stroke="#000000" stroke-width="2"></path><path d="M52.0410156,36.6054687 L75.5449219,21.6503905 L102.666016,36.6054687" id="Line" stroke="#000000" stroke-width="3" stroke-linecap="round" fill="none"></path></g></svg>';
             keyboardButton.setAttribute('style', 'position:fixed;right:0;bottom:0;background-color:rgba(128,128,128,0.5);border-radius:5px');
             canvas.parentElement.appendChild(keyboardButton);
             keyboardButton.onmousedown = function(evt) {
                 // show on-screen keyboard
-                input.focus();
+                input.focus({ preventScroll: true });
                 evt.preventDefault();
             };
             keyboardButton.ontouchstart = keyboardButton.onmousedown;
+            // modifier button for CMD key
+            var cmdButton = document.createElement('div');
+            cmdButton.innerHTML = '⌘';
+            cmdButton.setAttribute('style', 'position:fixed;left:0;background-color:rgba(128,128,128,0.5);width:50px;height:50px;font-size:30px;text-align:center;vertical-align:middle;line-height:50px;border-radius:5px');
+            if (window.visualViewport) {
+                // fix position of button when virtual keyboard is shown
+                const vv = window.visualViewport;
+                const fixPosition = () => cmdButton.style.top = `${vv.height}px`;
+                vv.addEventListener('resize', fixPosition);
+                cmdButton.style.transform = `translateY(-100%)`;
+                fixPosition();
+            } else {
+                cmdButton.style.bottom = '0';
+            }
+            canvas.parentElement.appendChild(cmdButton);
+            cmdButton.ontouchstart = function(evt) {
+                display.cmdButtonTouched = evt.changedTouches[0].identifier;
+                cmdButton.style.backgroundColor = 'rgba(255,255,255,0.5)';
+                evt.preventDefault();
+                evt.stopPropagation();
+            };
+            cmdButton.ontouchend = function(evt) {
+                display.cmdButtonTouched = null;
+                cmdButton.style.backgroundColor = 'rgba(128,128,128,0.5)';
+                evt.preventDefault();
+                evt.stopPropagation();
+            };
+            cmdButton.ontouchcancel = cmdButton.ontouchend;
         } else {
             // keep focus on input field
-            input.onblur = function() { input.focus(); };
-            input.focus();
+            input.onblur = function() { input.focus({ preventScroll: true }); };
+            input.focus({ preventScroll: true });
         }
         display.isMac = navigator.userAgent.includes("Mac");
         // emulate keypress events
@@ -56801,7 +56894,7 @@
                     deadChars = deadChars.concat(chars);
                 }
             }
-            if (!deadChars.length) input.value = "";  // clear input
+            if (!deadChars.length) resetInput();
         };
         input.onkeydown = function(evt) {
             checkFullscreen();
@@ -56835,18 +56928,18 @@
                 switch (evt.key) {
                     case "c":
                     case "x":
-                        if (!navigator.clipboard?.writeText) return; // fire document.oncopy/oncut
-                        var text = display.executeClipboardCopy(evt.key, evt.timeStamp);
+                        if (!navigator.clipboard) return; // fire document.oncopy/oncut
+                        var text = display.executeClipboardCopyKey(evt.key, evt.timeStamp);
                         if (typeof text === 'string') {
                             navigator.clipboard.writeText(text)
                                 .catch(function(err) { console.error("display: copy error " + err.message); });
                         }
                         return evt.preventDefault();
                     case "v":
-                        if (!navigator.clipboard?.readText) return; // fire document.onpaste
+                        if (!navigator.clipboard) return; // fire document.onpaste
                         navigator.clipboard.readText()
                             .then(function(text) {
-                                display.executeClipboardPaste(text, evt.timeStamp);
+                                display.executeClipboardPasteKey(text, evt.timeStamp);
                             })
                             .catch(function(err) { console.error("display: paste error " + err.message); });
                         return evt.preventDefault();
@@ -56864,10 +56957,47 @@
             if (!display.vm) return true;
             recordModifiers(evt, display);
         };
-        // copy/paste old-style
-        if (!navigator.clipboard?.writeText) {
+        function resetInput() {
+            input.value = "**";
+            input.selectionStart = 1;
+            input.selectionEnd = 1;
+        }
+        resetInput();
+        // hack to generate arrow keys when moving the cursor (e.g. via spacebar on iPhone)
+        // we're not getting any events for that but the cursor (selection) changes
+        if ('ontouchstart' in document) {
+            let count = 0; // count how often the interval has run after the first move
+            setInterval(() => {
+                const direction = input.selectionStart - 1;
+                if (direction === 0) {
+                    count = 0;
+                    return;
+                }
+                // move cursor once, then not for 500ms, then every 250ms
+                if (count === 0 || count > 2) {
+                    const key = direction < 1 ? 28 : 29; // arrow left or right
+                    recordKeyboardEvent(key, Date.now(), display);
+                }
+                input.selectionStart = 1;
+                input.selectionEnd = 1;
+                count++;
+            }, 250);
+        }
+        // more copy/paste
+        if (navigator.clipboard) {
+            // new-style copy/paste (all modern browsers)
+            display.readFromSystemClipboard = () => display.handlingEvent &&
+                navigator.clipboard.readText()
+                .then(text => display.clipboardString = text)
+                .catch(err => console.error("readFromSystemClipboard " + err.message));
+            display.writeToSystemClipboard = () => display.handlingEvent &&
+                navigator.clipboard.writeText(display.clipboardString)
+                .then(() => display.clipboardStringChanged = false)
+                .catch(err => console.error("writeToSystemClipboard " + err.message));
+        } else {
+            // old-style copy/paste
             document.oncopy = function(evt, key) {
-                var text = display.executeClipboardCopy(key, evt.timeStamp);
+                var text = display.executeClipboardCopyKey(key, evt.timeStamp);
                 if (typeof text === 'string') {
                     evt.clipboardData.setData("Text", text);
                 }
@@ -56877,11 +57007,9 @@
                 if (!display.vm) return true;
                 document.oncopy(evt, 'x');
             };
-        }
-        if (!navigator.clipboard?.readText) {
             document.onpaste = function(evt) {
                 var text = evt.clipboardData.getData('Text');
-                display.executeClipboardPaste(text, evt.timeStamp);
+                display.executeClipboardPasteKey(text, evt.timeStamp);
                 evt.preventDefault();
             };
         }
@@ -57084,15 +57212,17 @@
                         alert(error);
                     }
                 }
-                display.runNow = function() {
+                display.runNow = function(event) {
                     window.clearTimeout(loop);
+                    display.handlingEvent = event;
                     run();
+                    display.handlingEvent = '';
                 };
-                display.runFor = function(milliseconds) {
+                display.runFor = function(milliseconds, event) {
                     var stoptime = Date.now() + milliseconds;
                     do {
                         if (display.quitFlag) return;
-                        display.runNow();
+                        display.runNow(event);
                     } while (Date.now() < stoptime);
                 };
                 if (options.onStart) options.onStart(vm, display, options);

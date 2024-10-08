@@ -85,7 +85,7 @@ function runImage(imageData, imageName, options) {
 
                     // Ignore display.quitFlag when requested.
                     // Some Smalltalk images quit when no display is found.
-                    if(options.ignoreQuit || !display.quitFlag) {
+                    if (options.ignoreQuit || !display.quitFlag) {
                         setTimeout(vm.runProcessLoop, ms === "sleep" ? 10 : ms);
                     }
                 });
@@ -105,7 +105,7 @@ function fetchImageAndRun(imageName, options) {
         mode: "cors",
         cache: "no-store"
     }).then(function(response) {
-        if(!response.ok) {
+        if (!response.ok) {
             throw new Error("Response not OK: " + response.status);
         }
         return response.arrayBuffer();
@@ -129,7 +129,7 @@ Object.extend(Squeak, {
 // Retrieve image name from URL
 var searchParams = (new URL(self.location)).searchParams;
 var imageName = searchParams.get("imageName");
-if(imageName) {
+if (imageName) {
     var options = {
         ignoreQuit: searchParams.get("ignoreQuit") !== null
     };
