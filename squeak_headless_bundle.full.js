@@ -2170,6 +2170,14 @@
                 if (this.isSpur && this.classTable[fromHash] === fromArray[i]) {
                     this.classTable[fromHash] = toArray[i];
                 }
+                if (twoWay && this.isSpur && this.classTable[toArray[i].hash] === toArray[i]) {
+    var fromClass = fromArray[i];
+    var fromClassName = fromClass.className ? fromClass.className() : fromClass.sqClass.className();
+    var toClass = toArray[i];
+    var toClassName = toClass.className ? toClass.className() : toClass.sqClass.className();
+    console.warn("Unexpected two way class become", fromClassName, toClassName);
+                    this.classTable[toArray[i].hash] = fromArray[i];
+                }
             }
             // temporarily append young objects to old space
             this.lastOldObject.nextObject = firstYoungObject;
