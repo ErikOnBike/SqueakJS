@@ -118,7 +118,7 @@
         // system attributes
         vmVersion: "SqueakJS 1.2.3",
         vmDate: "2024-09-28",               // Maybe replace at build time?
-        vmBuild: "2024-10-08",                 // or replace at runtime by last-modified?
+        vmBuild: "2024-10-09",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -12454,6 +12454,24 @@
           var src = receiver.bytes || receiver.words || [];
           var hash = this.stringHash(src);
           return this.answer(argCount, hash);
+        },
+        "primitiveStringTrim": function(argCount) {
+          if(argCount !== 0) return false;
+          this.interpreterProxy.stackValue(argCount);
+          var src = this.interpreterProxy.stackValue(argCount).asString();
+          return this.answer(argCount, src.trim());
+        },
+        "primitiveStringTrimLeft": function(argCount) {
+          if(argCount !== 0) return false;
+          this.interpreterProxy.stackValue(argCount);
+          var src = this.interpreterProxy.stackValue(argCount).asString();
+          return this.answer(argCount, src.trimStart());
+        },
+        "primitiveStringTrimRight": function(argCount) {
+          if(argCount !== 0) return false;
+          this.interpreterProxy.stackValue(argCount);
+          var src = this.interpreterProxy.stackValue(argCount).asString();
+          return this.answer(argCount, src.trimEnd());
         },
 
         // WideString class methods
