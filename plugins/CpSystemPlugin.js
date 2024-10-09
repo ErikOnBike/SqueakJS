@@ -863,6 +863,24 @@ console.error("FOUND IT");
       var hash = this.stringHash(src);
       return this.answer(argCount, hash);
     },
+    "primitiveStringTrim": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var src = this.interpreterProxy.stackValue(argCount).asString();
+      return this.answer(argCount, src.trim());
+    },
+    "primitiveStringTrimLeft": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var src = this.interpreterProxy.stackValue(argCount).asString();
+      return this.answer(argCount, src.trimStart());
+    },
+    "primitiveStringTrimRight": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var src = this.interpreterProxy.stackValue(argCount).asString();
+      return this.answer(argCount, src.trimEnd());
+    },
 
     // WideString class methods
     "primitiveWideStringFrom:": function(argCount) {
