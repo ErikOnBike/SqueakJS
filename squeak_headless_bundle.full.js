@@ -118,7 +118,7 @@
         // system attributes
         vmVersion: "SqueakJS 1.2.3",
         vmDate: "2024-09-28",               // Maybe replace at build time?
-        vmBuild: "2024-10-09",                 // or replace at runtime by last-modified?
+        vmBuild: "2024-10-15",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -13750,7 +13750,7 @@
           var receiver = this.interpreterProxy.stackValue(argCount);
           receiver.style = styleString;
           this.installStyleInTemplate(receiver);
-          this.renderAllInstances(receiver);
+          this.styleAllInstances(receiver);
           return this.answerSelf(argCount);
         },
         installStyleInTemplate: function(webComponentClass) {
@@ -13817,25 +13817,26 @@
           this.renderAllInstances(receiver);
           return this.answerSelf(argCount);
         },
-        renderAllInstances: function(webComponentClass, root) {
-          if(!root) {
-            root = window.document;
-          }
+        allInstancesDo: function(webComponentClass, root, func) {
 
           // Render all direct instances
-          var templateElement = webComponentClass.templateElement;
           var thisHandle = this;
-          root.querySelectorAll(webComponentClass.customTag).forEach(function(instance) {
-            thisHandle.renderTemplateOnElement(templateElement, instance);
-          });
+          root.querySelectorAll(webComponentClass.customTag).forEach(func);
 
           // Render all nested instances
           Object.keys(this.nestedTags).forEach(function(nestedTag) {
             root.querySelectorAll(nestedTag).forEach(function(instance) {
               if(instance.shadowRoot) {
-                thisHandle.renderAllInstances(webComponentClass, instance.shadowRoot);
+                thisHandle.allInstancesDo(webComponentClass, instance.shadowRoot, func);
               }
             });
+          });
+        },
+        renderAllInstances: function(webComponentClass) {
+          var templateElement = webComponentClass.templateElement;
+          var thisHandle = this;
+          this.allInstancesDo(webComponentClass, window.document, function(instance) {
+            thisHandle.renderTemplateOnElement(templateElement, instance);
           });
         },
         renderTemplateOnElement: function(templateElement, element) {
@@ -13848,6 +13849,36 @@
 
           // Set new content using a copy of the template to prevent changes (by others) to persist
           shadowRoot.appendChild(templateElement.cloneNode(true));
+        },
+        styleAllInstances: function(webComponentClass) {
+          var templateElement = webComponentClass.templateElement;
+          var styleSelector = "#cp-css--" + webComponentClass.customTag;
+          var styleElement = templateElement.querySelector(styleSelector);
+          if(!styleElement) {
+            console.warn("Styling all instance of <" + webComponentClass.customTag + ">, but no style present");
+            return;
+          }
+          var styleContent = styleElement.textContent;
+          var thisHandle = this;
+          this.allInstancesDo(webComponentClass, window.document, function(instance) {
+            thisHandle.updateStyleOnElement(styleContent, styleSelector, instance);
+          });
+        },
+        updateStyleOnElement: function(style, styleSelector, element) {
+          var styleElement = element.shadowRoot.querySelector(styleSelector);
+          if(styleElement) {
+
+            // Update existing style
+            styleElement.textContent = style;
+          } else {
+
+            // Insert new style to become the first element in the shadow DOM
+            // (this should normally not happen, every element should have a style)
+            var newStyleNode = window.document.createElement("style");
+            newStyleNode.id = styleSelector.slice(1);	// Remove '#'
+            newStyleNode.textContent = style;
+            element.insertBefore(newStyleNode, element.firstElementChild);
+          }
         },
 
         // TemplateComponent instance methods
