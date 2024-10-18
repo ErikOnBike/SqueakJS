@@ -118,7 +118,7 @@
         // system attributes
         vmVersion: "SqueakJS 1.2.3",
         vmDate: "2024-09-28",               // Maybe replace at build time?
-        vmBuild: "2024-10-15",                 // or replace at runtime by last-modified?
+        vmBuild: "2024-10-18",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -13836,15 +13836,23 @@
           var templateElement = webComponentClass.templateElement;
           var thisHandle = this;
           this.allInstancesDo(webComponentClass, window.document, function(instance) {
-            thisHandle.renderTemplateOnElement(templateElement, instance);
+            thisHandle.renderTemplateOnElement(webComponentClass, templateElement, instance);
           });
         },
-        renderTemplateOnElement: function(templateElement, element) {
+        renderTemplateOnElement: function(webComponentClass, templateElement, element) {
 
-          // Remove existing content
+          // Remove existing content (except for <style> tags which Stencil might have added)
           var shadowRoot = element.shadowRoot;
-          while(shadowRoot.firstChild) {
-            shadowRoot.firstChild.remove();
+          var cssIdentifier = "cp-css--" + webComponentClass.customTag;
+          var element = shadowRoot.firstElementChild;
+          while(element) {
+            if(element.localName !== "style" || element.id === cssIdentifier) {
+              var removeElement = element;
+              element = element.nextElementSibling;
+              removeElement.remove();
+    	} else {
+              element = element.nextElementSibling;
+    	}
           }
 
           // Set new content using a copy of the template to prevent changes (by others) to persist

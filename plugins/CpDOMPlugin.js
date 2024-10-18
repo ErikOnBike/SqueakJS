@@ -845,15 +845,23 @@ function CpDOMPlugin() {
       var templateElement = webComponentClass.templateElement;
       var thisHandle = this;
       this.allInstancesDo(webComponentClass, window.document, function(instance) {
-        thisHandle.renderTemplateOnElement(templateElement, instance);
+        thisHandle.renderTemplateOnElement(webComponentClass, templateElement, instance);
       });
     },
-    renderTemplateOnElement: function(templateElement, element) {
+    renderTemplateOnElement: function(webComponentClass, templateElement, element) {
 
-      // Remove existing content
+      // Remove existing content (except for <style> tags which Stencil might have added)
       var shadowRoot = element.shadowRoot;
-      while(shadowRoot.firstChild) {
-        shadowRoot.firstChild.remove();
+      var cssIdentifier = "cp-css--" + webComponentClass.customTag;
+      var element = shadowRoot.firstElementChild;
+      while(element) {
+        if(element.localName !== "style" || element.id === cssIdentifier) {
+          var removeElement = element;
+          element = element.nextElementSibling;
+          removeElement.remove();
+	} else {
+          element = element.nextElementSibling;
+	}
       }
 
       // Set new content using a copy of the template to prevent changes (by others) to persist
