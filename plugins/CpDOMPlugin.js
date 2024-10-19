@@ -586,15 +586,30 @@ function CpDOMPlugin() {
       var functionName = this.interpreterProxy.stackValue(1).asString();
       if(!functionName) return false;
       var functionArguments = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0)) || [];
+      return this.domElementApply(argCount, domElement, functionName, functionArguments);
+    },
+    "primitiveDomElementApply:withArguments:resultAs:": function(argCount) {
+      if(argCount !== 3) return false;
+      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      if(!domElement) return false;
+      var functionName = this.interpreterProxy.stackValue(2).asString();
+      if(!functionName) return false;
+      var functionArguments = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(1)) || [];
+      var proxyClass = this.interpreterProxy.stackValue(0);
+      return this.domElementApply(argCount, domElement, functionName, functionArguments, proxyClass);
+    },
+
+    // Helper method for CpDomElement
+    domElementApply: function(argCount, domElement, functionName, functionArguments, proxyClass) {
       var func = domElement[functionName];
       if(!func || !func.apply) return false;
       var result = undefined;
       try {
         result = func.apply(domElement, functionArguments);
       } catch(e) {
-        console.error("Failed to perform apply:withArguments on global object:", e, "Selector:", functionName, "Arguments:", functionArguments);
+        console.error("Failed to perform apply:withArguments:" + (proxyClass ? "resultAs:" : "") + " on object:", e, "Selector:", functionName, "Arguments:", functionArguments);
       }
-      return this.answer(argCount, result);
+      return this.answer(argCount, this.primHandler.makeStObject(result, proxyClass));
     },
 
     // HTMLElement class methods
