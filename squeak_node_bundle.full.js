@@ -2965,7 +2965,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.3",
 	    vmDate: "2024-09-28",               // Maybe replace at build time?
-	    vmBuild: "2024-10-09",                 // or replace at runtime by last-modified?
+	    vmBuild: "2024-11-01",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -5810,8 +5810,7 @@ function requireVm_interpreter () {
 	    },
 	    hackImage: function() {
 	        // hack methods to make work / speed up
-	        var opts = typeof location === 'object' ? location.hash : "",
-	            sista = this.method.methodSignFlag();
+	        this.method.methodSignFlag();
 	        [
 	            // Etoys fallback for missing translation files is hugely inefficient.
 	            // This speeds up opening a viewer by 10x (!)
@@ -5819,13 +5818,13 @@ function requireVm_interpreter () {
 	            //{method: "String>>translated", primitive: returnSelf, enabled: true},
 	            //{method: "String>>translatedInAllDomains", primitive: returnSelf, enabled: true},
 	            // 64 bit Squeak does not flush word size on snapshot
-	            {method: "SmalltalkImage>>wordSize", literal: {index: 1, old: 8, hack: 4}, enabled: true},
+	            // {method: "SmalltalkImage>>wordSize", literal: {index: 1, old: 8, hack: 4}, enabled: true},
 	            // Squeak 5.3 disable wizard by replacing #open send with pop
-	            {method: "ReleaseBuilder class>>prepareEnvironment", bytecode: {pc: 28, old: 0xD8, hack: 0x87}, enabled: opts.includes("wizard=false")},
+	            // {method: "ReleaseBuilder class>>prepareEnvironment", bytecode: {pc: 28, old: 0xD8, hack: 0x87}, enabled: opts.includes("wizard=false")},
 	            // Squeak source file should use UTF8 not MacRoman (both V3 and Sista)
-	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 53, old: 0x45, hack: 0x49}, enabled: !this.image.isSpur},
-	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 38, old: 0x16, hack: 0x13}, enabled: this.image.isSpur && sista},
-	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 50, old: 0x44, hack: 0x48}, enabled: this.image.isSpur && !sista},
+	            // {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 53, old: 0x45, hack: 0x49}, enabled: !this.image.isSpur},
+	            // {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 38, old: 0x16, hack: 0x13}, enabled: this.image.isSpur && sista},
+	            // {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 50, old: 0x44, hack: 0x48}, enabled: this.image.isSpur && !sista},
 	        ].forEach(function(each) {
 	            try {
 	                var m = each.enabled && this.findMethod(each.method);
@@ -15164,9 +15163,6 @@ function CpSystemPlugin() {
           if(obj.BYTES_PER_ELEMENT) {
             // TypedArray (distinguish Floats and Integers)
             if(obj.constructor === Float32Array || obj.constructor === Float64Array) {
-if(obj.constructor === Float64Array) {
-console.error("FOUND IT");
-}
               return thisHandle.addSeenObj(seen, obj, this.makeStArray(obj, null, seen));
             }
             switch(obj.BYTES_PER_ELEMENT) {
@@ -15468,6 +15464,11 @@ console.error("FOUND IT");
         // Release functionCall (except for result)
         delete functionCall.process;
         delete functionCall.arguments;
+
+        // If result is an error (recognized by cause, to allow functions to answer Error instances), throw it
+        if(functionCall.result instanceof Error && functionCall.result.cause === "--Smalltalk-code--") {
+          throw functionCall.result;
+        }
 
         return functionCall.result;
       };

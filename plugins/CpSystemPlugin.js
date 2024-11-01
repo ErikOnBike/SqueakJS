@@ -193,9 +193,6 @@ function CpSystemPlugin() {
           if(obj.BYTES_PER_ELEMENT) {
             // TypedArray (distinguish Floats and Integers)
             if(obj.constructor === Float32Array || obj.constructor === Float64Array) {
-if(obj.constructor === Float64Array) {
-console.error("FOUND IT");
-}
               return thisHandle.addSeenObj(seen, obj, this.makeStArray(obj, null, seen));
             }
             switch(obj.BYTES_PER_ELEMENT) {
@@ -497,6 +494,11 @@ console.error("FOUND IT");
         // Release functionCall (except for result)
         delete functionCall.process;
         delete functionCall.arguments;
+
+        // If result is an error (recognized by cause, to allow functions to answer Error instances), throw it
+        if(functionCall.result instanceof Error && functionCall.result.cause === "--Smalltalk-code--") {
+          throw functionCall.result;
+        }
 
         return functionCall.result;
       };
