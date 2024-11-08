@@ -15465,7 +15465,7 @@ function CpSystemPlugin() {
         delete functionCall.arguments;
 
         // If result is an error (recognized by cause, to allow functions to answer Error instances), throw it
-        if(functionCall.result instanceof Error && functionCall.result.cause === "--Smalltalk-code--") {
+        if(functionCall.result instanceof Error && functionCall.result.cause && functionCall.result.cause.sqClass) {
           throw functionCall.result;
         }
 
