@@ -118,7 +118,7 @@
         // system attributes
         vmVersion: "SqueakJS 1.2.3",
         vmDate: "2024-09-28",               // Maybe replace at build time?
-        vmBuild: "2024-11-01",                 // or replace at runtime by last-modified?
+        vmBuild: "2024-11-08",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -12014,7 +12014,6 @@
             return obj.words;
           }
 
-    //console.log("Default value for asJavaScriptObject for: ", obj, obj.toString());
           return obj.asString();
         },
         arrayAsJavaScriptObject: function(obj) {
@@ -12553,7 +12552,6 @@
           if(obj === undefined) return false;
           var selectorName = this.interpreterProxy.stackValue(2).asString();
           if(!selectorName) return false;
-    //console.log("Call " + selectorName + " on " + obj + " of class " + receiver.sqClass.className());
 
           // Handle special case for pass through, needed to support Promises
           // (which should not perform Smalltalk to JavaScript conversions
@@ -12621,9 +12619,13 @@
         },
         "primitiveJavaScriptObjectLastExceptionAs:": function(argCount) {
           if(argCount !== 1) return false;
-          var proxyClass = this.interpreterProxy.stackValue(0);
           var exception = this.lastException;
           if(exception !== null) {
+            var proxyClass = this.getProxyClassFor(exception);
+            if(!proxyClass || proxyClass === this.globalProxyClasses["Object"]) {
+              // Use specified Proxy Class if no explicit class can be found
+              proxyClass = this.interpreterProxy.stackValue(0);
+            }
             var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
             proxyInstance.jsObj = exception;
             exception = proxyInstance;
@@ -12653,6 +12655,32 @@
           if(obj === undefined) return false;
           var propertyName = this.interpreterProxy.stackValue(1).asString();
           var propertyValue = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+          obj[propertyName] = propertyValue;
+          return this.answerSelf(argCount);
+        },
+        "primitiveJavaScriptObjectRawPropertyAt:": function(argCount) {
+          if(argCount !== 1) return false;
+          var receiver = this.interpreterProxy.stackValue(argCount);
+          var obj = receiver.jsObj;
+          if(obj === undefined) return false;
+          var propertyName = this.interpreterProxy.stackValue(0).asString();
+          var result = obj[propertyName];
+          if(result === undefined || result === null || result.isNil) {
+            this.interpreterProxy.popthenPush(argCount + 1, this.vm.nilObj);
+            return true;
+          } else if(result.sqClass || (typeof result === "number" && result >= this.minSmallInteger && result <= this.maxSmallInteger)) {
+            this.interpreterProxy.popthenPush(argCount + 1, result);
+            return true;
+          }
+          return false;
+        },
+        "primitiveJavaScriptObjectRawPropertyAt:put:": function(argCount) {
+          if(argCount !== 2) return false;
+          var receiver = this.interpreterProxy.stackValue(argCount);
+          var obj = receiver.jsObj;
+          if(obj === undefined) return false;
+          var propertyName = this.interpreterProxy.stackValue(1).asString();
+          var propertyValue = this.interpreterProxy.stackValue(0);
           obj[propertyName] = propertyValue;
           return this.answerSelf(argCount);
         },
