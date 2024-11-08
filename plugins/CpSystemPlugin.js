@@ -1067,6 +1067,32 @@ function CpSystemPlugin() {
       obj[propertyName] = propertyValue;
       return this.answerSelf(argCount);
     },
+    "primitiveJavaScriptObjectRawPropertyAt:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var obj = receiver.jsObj;
+      if(obj === undefined) return false;
+      var propertyName = this.interpreterProxy.stackValue(0).asString();
+      var result = obj[propertyName];
+      if(result === undefined || result === null || result.isNil) {
+        this.interpreterProxy.popthenPush(argCount + 1, this.vm.nilObj);
+        return true;
+      } else if(result.sqClass || (typeof result === "number" && result >= this.minSmallInteger && result <= this.maxSmallInteger)) {
+        this.interpreterProxy.popthenPush(argCount + 1, result);
+        return true;
+      }
+      return false;
+    },
+    "primitiveJavaScriptObjectRawPropertyAt:put:": function(argCount) {
+      if(argCount !== 2) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var obj = receiver.jsObj;
+      if(obj === undefined) return false;
+      var propertyName = this.interpreterProxy.stackValue(1).asString();
+      var propertyValue = this.interpreterProxy.stackValue(0);
+      obj[propertyName] = propertyValue;
+      return this.answerSelf(argCount);
+    },
     "primitiveJavaScriptObjectGetSelectorNames": function(argCount) {
       if(argCount !== 0) return false;
       var obj = this.interpreterProxy.stackValue(argCount).jsObj;
