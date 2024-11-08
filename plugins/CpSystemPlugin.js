@@ -423,7 +423,6 @@ function CpSystemPlugin() {
         return obj.words;
       }
 
-//console.log("Default value for asJavaScriptObject for: ", obj, obj.toString());
       return obj.asString();
     },
     arrayAsJavaScriptObject: function(obj) {
@@ -962,7 +961,6 @@ function CpSystemPlugin() {
       if(obj === undefined) return false;
       var selectorName = this.interpreterProxy.stackValue(2).asString();
       if(!selectorName) return false;
-//console.log("Call " + selectorName + " on " + obj + " of class " + receiver.sqClass.className());
 
       // Handle special case for pass through, needed to support Promises
       // (which should not perform Smalltalk to JavaScript conversions
@@ -1030,9 +1028,13 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectLastExceptionAs:": function(argCount) {
       if(argCount !== 1) return false;
-      var proxyClass = this.interpreterProxy.stackValue(0);
       var exception = this.lastException;
       if(exception !== null) {
+        var proxyClass = this.getProxyClassFor(exception);
+        if(!proxyClass || proxyClass === this.globalProxyClasses["Object"]) {
+          // Use specified Proxy Class if no explicit class can be found
+          proxyClass = this.interpreterProxy.stackValue(0);
+        }
         var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
         proxyInstance.jsObj = exception;
         exception = proxyInstance;
