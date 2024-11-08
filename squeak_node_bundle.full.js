@@ -12620,6 +12620,7 @@ class SessionStorage {
 		Object.keys(process$1.env).forEach(function(key) {
 			self.storage[key] = process$1.env[key];
 		});
+		self.storage["CLIENT_VERSION"] = "1";
 	}
 	getItem(name) {
 		return this.storage[name];
