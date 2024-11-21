@@ -15370,24 +15370,24 @@ function CpSystemPlugin() {
         return obj;
       } else if(obj.isFloat) {
         return obj.float;
-      } else if(this.isStringClass(obj.sqClass)) {
+      } else if(obj.jsObj) {
+        return obj.jsObj;
+      } else if(this.isKindOf(obj.sqClass, this.stringClass)) {
         return obj.asString();
       } else if(obj.sqClass === this.arrayClass) {
         return this.arrayAsJavaScriptObject(obj);
-      } else if(obj.sqClass === this.orderedDictionaryClass) {
+      } else if(this.isKindOf(obj.sqClass, this.orderedDictionaryClass)) {
         return this.orderedDictionaryAsJavaScriptObject(obj);
-      } else if(obj.sqClass === this.dictionaryClass) {
+      } else if(this.isKindOf(obj.sqClass, this.dictionaryClass)) {
         return this.dictionaryAsJavaScriptObject(obj);
       } else if(obj.domElement) {
         return obj.domElement;
-      } else if(this.isContextClass(obj.sqClass)) {
+      } else if(this.isKindOf(obj.sqClass, this.contextClass)) {
         return this.contextAsJavaScriptFunction(obj);
       } else if(obj.sqClass === this.largePositiveIntegerClass) {
         return this.largeInteger(obj);
       } else if(obj.sqClass === this.largeNegativeIntegerClass) {
         return -this.largeInteger(obj);
-      } else if(obj.jsObj) {
-        return obj.jsObj;
       } else if(obj.bytes) {
         return obj.bytes;
       } else if(obj.words) {
@@ -15473,19 +15473,9 @@ function CpSystemPlugin() {
         return functionCall.result;
       };
     },
-    isContextClass: function(sqClass) {
-      // For P8 check for superclasses matching Context (i.e. P8 has subclass MethodContext)
+    isKindOf: function(sqClass, searchClass) {
       while(sqClass && !sqClass.isNil) {
-        if(sqClass === this.contextClass) {
-          return true;
-        }
-        sqClass = sqClass.superclass();
-      }
-      return false;
-    },
-    isStringClass: function(sqClass) {
-      while(sqClass && !sqClass.isNil) {
-        if(sqClass === this.stringClass) {
+        if(sqClass === searchClass) {
           return true;
         }
         sqClass = sqClass.superclass();
