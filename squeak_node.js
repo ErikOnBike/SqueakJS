@@ -73,7 +73,7 @@ class SessionStorage {
 		Object.keys(process.env).forEach(function(key) {
 			self.storage[key] = process.env[key];
 		});
-		self.storage["CLIENT_VERSION"] = "1";
+		self.storage["CLIENT_VERSION"] = "2";
 	}
 	getItem(name) {
 		return this.storage[name];
@@ -168,6 +168,11 @@ fs.readFile(root + imageName + ".image", function(error, data) {
             if(restart === true) {
                 // Don't restart if process loop wasn't stopped before
                 if(!vm.stoppedProcessLoop) {
+                    return;
+                }
+                // Don't restart if there is no active Process
+                var activeProcess = vm.primHandler.getScheduler().pointers[Squeak.ProcSched_activeProcess];
+                if(!activeProcess || activeProcess.isNil) {
                     return;
                 }
                 vm.stoppedProcessLoop = false;

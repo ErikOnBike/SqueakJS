@@ -1758,6 +1758,12 @@ Object.subclass('Squeak.Primitives',
         if (process === this.activeProcess()) {
             this.vm.popNandPush(1, this.vm.nilObj);
             this.transferTo(this.wakeHighestPriority());
+        } else if (process.runProcess) {
+            // CodeParadise specific code:
+            // Do not actually suspend a synchronous internal process.
+            // A link to the internal process is maintained elsewhere,
+            // so simply ignore it here.
+            this.vm.popNandPush(1, this.vm.nilObj);
         } else {
             var oldList = process.pointers[Squeak.Proc_myList];
             if (oldList.isNil) return false;
@@ -1776,18 +1782,43 @@ Object.subclass('Squeak.Primitives',
         return this.getScheduler().pointers[Squeak.ProcSched_activeProcess];
     },
     resume: function(newProc) {
+        // CodeParadise specific code:
+        // This should not happen, but if a synchronous internal process
+        // is resumed, try to run it to completion directly.
+        // Normally this type of process is resumed by calling their runProcess()
+        // method from a handler (like the event or transition handler in the
+        // DOM plugin).
+        if(newProc.runProcess) {
+            newProc.runProcess();
+            return;
+        }
+
         var activeProc = this.activeProcess();
-        var activePriority = activeProc.pointers[Squeak.Proc_priority];
-        var newPriority = newProc.pointers[Squeak.Proc_priority];
-        if (newPriority > activePriority) {
-            this.putToSleep(activeProc);
-            this.transferTo(newProc);
-        } else {
+        if(activeProc.runProcess) {
+            // CodeParadise specific code:
+            // If a regular Process is resumed before a synchronous internal
+            // process has finished, put the regular process to sleep and let
+            // the internal process continue.
             this.putToSleep(newProc);
+        } else {
+            // Regular Process switch
+            var activePriority = activeProc.pointers[Squeak.Proc_priority];
+            var newPriority = newProc.pointers[Squeak.Proc_priority];
+            if (newPriority > activePriority) {
+                this.putToSleep(activeProc);
+                this.transferTo(newProc);
+            } else {
+                this.putToSleep(newProc);
+            }
         }
     },
     putToSleep: function(aProcess) {
-        if(aProcess === null) return;
+        // Do not put synchronous internal processes to sleep (they shoul be kept
+        if (aProcess === null) return;
+        // CodeParadise specific code:
+        if (aProcess.runProcess) {
+            return;
+        }
         //Save the given process on the scheduler process list for its priority.
         var priority = aProcess.pointers[Squeak.Proc_priority];
         var processLists = this.getScheduler().pointers[Squeak.ProcSched_processLists];
@@ -1798,6 +1829,9 @@ Object.subclass('Squeak.Primitives',
         //Record a process to be awakened on the next interpreter cycle.
         var sched = this.getScheduler();
         var oldProc = sched.pointers[Squeak.ProcSched_activeProcess];
+        if(oldProc === newProc) {
+            return;
+        }
         sched.pointers[Squeak.ProcSched_activeProcess] = newProc;
         sched.dirty = true;
         if(oldProc !== null) {

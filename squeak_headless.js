@@ -65,6 +65,11 @@ function runImage(imageData, imageName, options) {
                 if(!vm.stoppedProcessLoop) {
                     return;
                 }
+                // Don't restart if there is no active Process
+                var activeProcess = vm.primHandler.getScheduler().pointers[Squeak.ProcSched_activeProcess];
+                if(!activeProcess || activeProcess.isNil) {
+                    return;
+                }
                 vm.stoppedProcessLoop = false;
                 vm.processLoopCounter = 0;
             }

@@ -937,7 +937,7 @@ function CpDOMPlugin() {
       if(this.eventsReceived.length > 0 && this.eventHandlerProcess && !this.eventHandlerProcess.isRunning) {
         try {
           this.eventHandlerProcess.isRunning = true;
-          this.eventHandlerProcess();
+          this.eventHandlerProcess.runProcess();
         } finally {
           this.eventHandlerProcess.isRunning = false;
         }
@@ -947,7 +947,7 @@ function CpDOMPlugin() {
     // Event class methods
     "primitiveEventRegisterProcess:": function(argCount) {
       if(argCount !== 1) return false;
-      this.eventHandlerProcess = this.systemPlugin.contextAsJavaScriptFunction(this.interpreterProxy.stackValue(0));
+      this.eventHandlerProcess = this.systemPlugin.newProcessForContext(this.interpreterProxy.stackValue(0), this.primHandler.makeStString("Event"));
       return this.answerSelf(argCount);
     },
     "primitiveEventRegisterClass:forType:": function(argCount) {
@@ -1172,7 +1172,7 @@ function CpDOMPlugin() {
     // Transition class methods
     "primitiveTransitionRegisterProcess:": function(argCount) {
       if(argCount !== 1) return false;
-      this.transitionProcess = this.systemPlugin.contextAsJavaScriptFunction(this.interpreterProxy.stackValue(0));
+      this.transitionProcess = this.systemPlugin.newProcessForContext(this.interpreterProxy.stackValue(0), this.primHandler.makeStString("Transition"));
       return this.answerSelf(argCount);
     },
     "primitiveTransitionHasTransitions:": function(argCount) {
@@ -1185,8 +1185,11 @@ function CpDOMPlugin() {
       return this.answer(argCount, Math.ceil(performance.now() - this.transitionStartTick));
     },
     handleTransitions: function(endTime) {
+      // In contrast with the Event handler Process, the Transition Process is
+      // never called while already running (always called in RequestAnimationFrame loop).
+      // Therefore no need to check if it is already running.
       if(this.transitionProcess && this.hasTransitions) {
-        this.transitionProcess();
+        this.transitionProcess.runProcess();
       }
     }
   };

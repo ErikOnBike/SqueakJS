@@ -70,21 +70,14 @@ function CpSystemPlugin() {
 
     // Helper method for running a process uninterrupted
     runUninterrupted: function(process) {
-      // Make specified process the new active Process (disregard Process priorities).
-      // The current active Process is maintained and restored after the new Process
-      // has finished or suspends itself.
+      // Make specified process the active process (disregard process priorities)
       var primHandler = this.primHandler;
-      var schedulerPointers = primHandler.getScheduler().pointers;
-      var activeProcess = schedulerPointers[Squeak.ProcSched_activeProcess];
-      if(activeProcess && !activeProcess.runProcess) {
-        primHandler.putToSleep(activeProcess);
-      }
+      var scheduler = primHandler.getScheduler();
+      primHandler.putToSleep(scheduler.pointers[Squeak.ProcSched_activeProcess]);
       primHandler.transferTo(process);
 
-      // Run the specified process until the process is finished or suspends itself.
-      // No other Process will be able to run, except for other uninterruptable Processes.
-      // This allows nested JavaScriptFunction (wrappers) to execute JavaScript code
-      // synchronously (without being pre-empted).
+      // Run the specified process until the process goes
+      // to sleep again or the end time is reached.
       // This 'runner' assumes the process runs 'quickly'.
       var vm = this.vm;
       var compiled;
@@ -92,23 +85,9 @@ function CpSystemPlugin() {
         if(compiled = vm.method.compiled) {
           compiled(vm);
         } else {
-          vm.interpretOneSistaWithExtensions(false, 0, 0);
+          vm.interpretOne();
         }
-      } while(process === schedulerPointers[Squeak.ProcSched_activeProcess]);
-
-      // Restore active Process
-      if(activeProcess) {
-        primHandler.transferTo(activeProcess);
-      }
-
-      /*
-      activeProcess = schedulerPointers[Squeak.ProcSched_activeProcess];
-      if(activeProcess && activeProcess.pointers[Squeak.Proc_priority] < this.maxProcessPriority && vm.stoppedProcessLoop) {
-        self.setTimeout(function() {
-          vm.runProcessLoop(true);
-        }, 0);
-      }
-      */
+      } while(process === scheduler.pointers[Squeak.ProcSched_activeProcess] && !process.isTerminated);
     },
 
     // Add helper method to restart process loop on semaphore update
@@ -472,32 +451,91 @@ function CpSystemPlugin() {
       });
       return result;
     },
-    contextAsJavaScriptFunction: function(obj) {
-
-      // Create the JavaScript function which executes the Context
+    contextAsJavaScriptFunction: function(context) {
       var thisHandle = this;
       var func = function() {
-
-        // Create a copy of the Context to allow performing it multiple times.
-        var context = thisHandle.vm.image.clone(obj);
-
-        // Add the Context to the function (required for JavaScriptFunction >> #arguments
-        // and JavaScriptFunction >> #setResult:)
-        func.__cp_context = context;
-
-        // Register the function arguments in the Context.
-        // This is used by JavaScriptFunction >> #arguments.
         var funcArgs = Array.from(arguments);
         var blockArgs = funcArgs.map(function(each) {
           return thisHandle.primHandler.makeStObject(each);
         });
         context.__cp_func_arguments = blockArgs;
 
-        // Create a Process for the context
-        var process = thisHandle.newProcessForContext(context);
+        // Create a cloned (i.e. reset) Context and a new Process
+        // to execute the Block (allowing Smalltalk Blocks to call more
+        // 'nested' JavaScript functions wrapping another Block).
+        //var context = thisHandle.vm.image.clone(obj);
+        var process = thisHandle.vm.instantiateClass(thisHandle.processClass, 0);
+        process.pointers[Squeak.Proc_suspendedContext] = context;
+        process.pointers[Squeak.Proc_priority] = thisHandle.maxProcessPriority;
+        process.isInternal = true;
+        process.parentProcess = thisHandle.primHandler.getScheduler().pointers[Squeak.ProcSched_activeProcess];
+        process.runProcess = function() {
+          console.log("Run internal process", process);
+          if(process.isAwaiting) {
+            console.log("Finishing up await");
+	  }
+          thisHandle.runUninterrupted(process);
+
+          // The result should have been stored by the CpJavaScriptFunction >> #setResult: method for
+          // synchronous results, otherwise it is a suspended Process for CpJavaScriptPromise >> #await.
+          // Check if result is an error (recognized by cause, to allow functions to answer Error instances).
+          var result = context.__cp_func_result;
+          var isError = result instanceof Error && result.cause && result.cause.sqClass;
+          if(result === undefined) {
+
+            // No result yet, create a Promise for the result (if not already present)
+            console.log("Process suspended in await");
+            if(!context.__cp_func_result_promise) {
+              context.__cp_func_result_promise = new Promise(function(resolve, reject) {
+                context.__cp_func_result_promise_resolve = resolve;
+                context.__cp_func_result_promise_reject = reject;
+              });
+              process.isAwaiting = true;
+              result = context.__cp_func_result_promise;
+            } else {
+              console.warn("Process for JavaScript function suspended for second time, should not happen");
+            }
+          } else {
+  
+            // Resolve or reject the result if there was a Promise waiting
+            if(context.__cp_func_result_promise) {
+              if(isError) {
+                console.log("Rejecting promise", result);
+                context.__cp_func_result_promise_reject(result);
+              } else {
+                console.log("Resolving promise", result);
+                context.__cp_func_result_promise_resolve(result);
+              }
+  
+              // Answer the Promise
+              result = context.__cp_func_result_promise;
+            }
+          }
+
+          // Answer result or error
+          return isError ? { error: result } : { answer: result };
+        };
 
         // Run the process (now it is setup) and keep result
         var processResult = process.runProcess();
+
+        // If the parent Process was a generic Process, reactive
+        if(process.parentProcess) {
+          console.log("Has a parent process internal? " + !!parent.isInternal);
+          if(!process.parentProcess.isInternal) {
+            console.log("Reactivate parent process");
+            thisHandle.primHandler.transferTo(process.parentProcess);
+          }
+        } else {
+          console.warn("No parent process");
+        }
+        if(thisHandle.vm.stoppedProcessLoop) {
+          console.log("Restart process loop");
+          // Restart process loop to resurrect any pending process
+          thisHandle.vm.runProcessLoop(true);
+	}
+
+        console.log("JavaScript function/process result", processResult);
 
         // Throw in case of error
         if(processResult.error) {
@@ -507,41 +545,11 @@ function CpSystemPlugin() {
         return processResult.answer;
       };
 
+      // Add the Context to the function (required for JavaScriptFunction >> #arguments
+      // and JavaScriptFunction >> #setResult:)
+      func.__cp_context = context;
+
       return func;
-    },
-    newProcessForContext: function(context, processName) {
-      // Create a new Process to execute the specified Context.
-      // Normally this Context is created from a Smalltalk Block
-      // through either CpJavaScriptFunction class >> #wrap:
-      // or in either CpEvent class >> #registerEventProcess: or
-      // CpTransition class >> #registerTransitionProcess:
-      // The mechanism of wrapping Blocks in JavaScript functions
-      // allows Smalltalk Blocks to be used in callbacks or Promises.
-      // It therefore allows Smalltalk to be used inside JavaScript,
-      // next to already allowing JavaScript to be used inside Smalltalk.
-      var process = this.vm.instantiateClass(this.processClass, 0);
-      process.pointers[Squeak.Proc_suspendedContext] = context;
-      process.pointers[Squeak.Proc_priority] = this.maxProcessPriority;
-      if(processName) {
-        process.pointers[Squeak.Proc_name] = processName;
-      }
-      var thisHandle = this;
-      process.runProcess = function() {
-
-        // Execute the Process
-        thisHandle.runUninterrupted(process);
-
-        // The result should have been stored by the CpJavaScriptFunction >> #setResult: method for
-        // synchronous results, otherwise it is a suspended Process for CpJavaScriptPromise >> #await.
-        // Check if result is an error (recognized by cause, to allow functions to answer Error instances).
-        var result = context.__cp_func_result;
-        var isError = result instanceof Error && result.cause && result.cause.sqClass;
-
-        // Answer result or error
-        return isError ? { error: result } : { answer: result };
-      };
-
-      return process;
     },
     isKindOf: function(sqClass, searchClass) {
       while(sqClass && !sqClass.isNil) {
@@ -1244,6 +1252,7 @@ function CpSystemPlugin() {
       var result = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
 
       // Store the result in the Context instance
+console.log("Set result", result);
       context.__cp_func_result = result;
       return this.answerSelf(argCount);
     },
