@@ -118,7 +118,7 @@
         // system attributes
         vmVersion: "SqueakJS 1.2.3",
         vmDate: "2024-09-28",               // Maybe replace at build time?
-        vmBuild: "cp-202412-12",                 // or replace at runtime by last-modified?
+        vmBuild: "cp-202501-10",                 // or replace at runtime by last-modified?
         vmPath: "unknown",                  // Replace at runtime
         vmFile: "vm.js",
         vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -11667,15 +11667,19 @@
           return true;
         },
 
-        // Helper method to create a global scope (working similarly in Browser and in NodeJS)
+        // Helper method to create a global scope (working similarly in Browser and in NodeJS).
+        // Since ES2020 there should be a globalThis we can use. If not present, create one.
         setupGlobalObject: function() {
-          if(typeof window !== 'undefined' && !window.global) {
-            // For Browser environment create a global object named 'global'.
-            window.global = window;
+          if(typeof window !== 'undefined' && !window.globalThis) {
+            // For Browser environment create a global object named 'globalThis'.
+            window.globalThis = window;
           } else {
+            if(!global.globalThis) {
+              global.globalThis = global;
+            }
             // For Node.js make 'require' an actual global function and replace constructor to prevent
             // it from being characterized as a Dictionary (when processing in makeStObject).
-            global.require = function(name) {
+            globalThis.require = function(name) {
               var module = require(name);
               Object.keys(module).forEach(function(key) {
                 // Check for classes (not 100% check, okay if we give to many objects an internal property)
@@ -11691,12 +11695,12 @@
               });
               return module;
             };
-            global.constructor = function() {};
+            globalThis.constructor = function() {};
           }
 
           // Create global function to let objects 'identify' themselves (used for Proxy-ing JavaScript objects).
           // For undefined or null, answer the global object itself.
-          global.identity = function(x) { return x === undefined || x === null ? global : x; };
+          globalThis.identity = function(x) { return x === undefined || x === null ? globalThis : x; };
         },
 
         // Helper method for running a process uninterrupted
@@ -11735,7 +11739,7 @@
           /*
           activeProcess = schedulerPointers[Squeak.ProcSched_activeProcess];
           if(activeProcess && activeProcess.pointers[Squeak.Proc_priority] < this.maxProcessPriority && vm.stoppedProcessLoop) {
-            self.setTimeout(function() {
+            globalThis.setTimeout(function() {
               vm.runProcessLoop(true);
             }, 0);
           }
@@ -12163,7 +12167,7 @@
             thisHandle.runUninterrupted(process);
 
             // The result should have been stored by the CpJavaScriptFunction >> #setResult: method for
-            // synchronous results, otherwise it is a suspended Process for CpJavaScriptPromise >> #await.
+            // synchronous results.
             // Check if result is an error (recognized by cause, to allow functions to answer Error instances).
             var result = context.__cp_func_result;
             var isError = result instanceof Error && result.cause && result.cause.sqClass;
@@ -12594,7 +12598,7 @@
             // Find Proxy Class for the specified JavaScript object (only exact match)
             proxyClassName = proxyClassNames.find(function(name) {
               // Either the actual class has received explicit class name or it is found in the global object
-              return jsClass.__cp_className === name || global[name] === jsClass;
+              return jsClass.__cp_className === name || globalThis[name] === jsClass;
             });
 
             // Try the superclass
@@ -12884,7 +12888,7 @@
           if(argCount !== 1) return false;
           var variableName = this.interpreterProxy.stackValue(0).asString();
           if(!variableName) return false;
-          var variableValue = global.sessionStorage.getItem(variableName);
+          var variableValue = globalThis.sessionStorage.getItem(variableName);
           return this.answer(argCount, variableValue);
         },
         "primitiveEnvironmentVariableAt:put:": function(argCount) {
@@ -12893,14 +12897,14 @@
           if(!variableName) return false;
           var variableValue = this.interpreterProxy.stackValue(0).asString();
           if(!variableValue) return false;
-          global.sessionStorage.setItem(variableName, variableValue);
+          globalThis.sessionStorage.setItem(variableName, variableValue);
           return this.answerSelf(argCount);
         },
         "primitiveEnvironmentVariableNames": function(argCount) {
           if(argCount !== 0) return false;
-          var variableNames = new Array(global.sessionStorage.length);
-          for(var i = 0; i < global.sessionStorage.length; i++) {
-            variableNames[i] = global.sessionStorage.key(i);
+          var variableNames = new Array(globalThis.sessionStorage.length);
+          for(var i = 0; i < globalThis.sessionStorage.length; i++) {
+            variableNames[i] = globalThis.sessionStorage.key(i);
           }
           return this.answer(argCount, variableNames);
         },
@@ -12908,14 +12912,14 @@
           if(argCount !== 1) return false;
           var variableName = this.interpreterProxy.stackValue(0).asString();
           if(!variableName) return false;
-          global.sessionStorage.removeItem(variableName);
+          globalThis.sessionStorage.removeItem(variableName);
           return this.answerSelf(argCount);
         },
         "primitiveEnvironmentPersistentVariableAt:": function(argCount) {
           if(argCount !== 1) return false;
           var variableName = this.interpreterProxy.stackValue(0).asString();
           if(!variableName) return false;
-          var variableValue = global.localStorage.getItem(variableName);
+          var variableValue = globalThis.localStorage.getItem(variableName);
           return this.answer(argCount, variableValue);
         },
         "primitiveEnvironmentPersistentVariableAt:put:": function(argCount) {
@@ -12924,21 +12928,21 @@
           if(!variableName) return false;
           var variableValue = this.interpreterProxy.stackValue(0).asString();
           if(!variableValue) return false;
-          global.localStorage.setItem(variableName, variableValue);
+          globalThis.localStorage.setItem(variableName, variableValue);
           return this.answerSelf(argCount);
         },
         "primitiveEnvironmentRemovePersistentVariableAt:": function(argCount) {
           if(argCount !== 1) return false;
           var variableName = this.interpreterProxy.stackValue(0).asString();
           if(!variableName) return false;
-          global.localStorage.removeItem(variableName);
+          globalThis.localStorage.removeItem(variableName);
           return this.answerSelf(argCount);
         },
         "primitiveEnvironmentAlert:": function(argCount) {
           if(argCount !== 1) return false;
           var message = this.interpreterProxy.stackValue(0).asString();
-          if(global.alert) {
-            global.alert(message);
+          if(globalThis.alert) {
+            globalThis.alert(message);
           } else {
             console.warn(message);
           }
@@ -12947,19 +12951,19 @@
         "primitiveEnvironmentConfirm:": function(argCount) {
           if(argCount !== 1) return false;
           var message = this.interpreterProxy.stackValue(0).asString();
-          if(!global.confirm) return false;
-          return this.answer(argCount, global.confirm(message) === true);
+          if(!globalThis.confirm) return false;
+          return this.answer(argCount, globalThis.confirm(message) === true);
         },
         "primitiveEnvironmentGlobalApply:withArguments:": function(argCount) {
           if(argCount !== 2) return false;
           var functionName = this.interpreterProxy.stackValue(1).asString();
           if(!functionName) return false;
           var functionArguments = this.asJavaScriptObject(this.interpreterProxy.stackValue(0)) || [];
-          var func = global[functionName];
+          var func = globalThis[functionName];
           if(!func || !func.apply) return false;
           var result = undefined;
           try {
-            result = func.apply(global, functionArguments);
+            result = func.apply(globalThis, functionArguments);
           } catch(e) {
             console.error("Failed to perform apply:withArguments on global object:", e, "Selector:", functionName, "Arguments:", functionArguments);
           }
@@ -13090,7 +13094,7 @@
     function registerCpSystemPlugin() {
         if(typeof Squeak === "object" && Squeak.registerExternalModule) {
             Squeak.registerExternalModule("CpSystemPlugin", CpSystemPlugin());
-        } else self.setTimeout(registerCpSystemPlugin, 100);
+        } else globalThis.setTimeout(registerCpSystemPlugin, 100);
     }
     registerCpSystemPlugin();
 
@@ -14293,7 +14297,7 @@
     function registerCpDOMPlugin() {
         if(typeof Squeak === "object" && Squeak.registerExternalModule) {
             Squeak.registerExternalModule("CpDOMPlugin", CpDOMPlugin());
-        } else self.setTimeout(registerCpDOMPlugin, 100);
+        } else globalThis.setTimeout(registerCpDOMPlugin, 100);
     }
     registerCpDOMPlugin();
 
