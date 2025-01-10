@@ -1198,7 +1198,7 @@ function CpDOMPlugin() {
 function registerCpDOMPlugin() {
     if(typeof Squeak === "object" && Squeak.registerExternalModule) {
         Squeak.registerExternalModule("CpDOMPlugin", CpDOMPlugin());
-    } else self.setTimeout(registerCpDOMPlugin, 100);
+    } else globalThis.setTimeout(registerCpDOMPlugin, 100);
 };
 
 registerCpDOMPlugin();
