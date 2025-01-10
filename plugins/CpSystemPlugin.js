@@ -39,10 +39,13 @@ function CpSystemPlugin() {
     // Helper method to create a global scope (working similarly in Browser and in NodeJS).
     // Since ES2020 there should be a globalThis we can use. If not present, create one.
     setupGlobalObject: function() {
-      if(typeof window !== 'undefined' && !window.globalThis) {
+      if(typeof window !== 'undefined') {
         // For Browser environment create a global object named 'globalThis'.
-        window.globalThis = window;
+        if(!window.globalThis) {
+          window.globalThis = window;
+        }
       } else {
+        // For Node.js environment create a global object named 'globalThis'.
         if(!global.globalThis) {
           global.globalThis = global;
         }
