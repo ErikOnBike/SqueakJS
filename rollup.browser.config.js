@@ -2,9 +2,9 @@ replace = require("@rollup/plugin-replace");
 resolve = require("@rollup/plugin-node-resolve");
 
 module.exports = {
-	input: "app.js",
+	input: "webapp.js",
 	output: {
-		file: "squeak_headless_bundle.full.js",
+		file: "webapp_bundle.full.js",
 		format: "iife"
 	},
 	plugins: [

@@ -3,9 +3,9 @@ resolve = require("@rollup/plugin-node-resolve");
 commonjs = require("@rollup/plugin-commonjs");
 
 module.exports = {
-	input: "node_app.js",
+	input: "nodeapp.js",
 	output: {
-		file: "squeak_node_bundle.full.js",
+		file: "nodeapp_bundle.full.js",
 		format: "cjs"
 	},
 	plugins: [

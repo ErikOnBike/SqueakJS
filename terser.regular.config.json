@@ -8,7 +8,7 @@
     "typeofs": false
   },
   "format": {
-    "preamble": "/*\n * Minified version of SqueakJS VM (incl. CodeParadise adaptations and plugins)\n * SqueakJS VM: Copyright (c) 2013-2020 Vanessa Freudenberg\n * CodeParadise: https://github.com/ErikOnBike/CodeParadise\n */"
+    "preamble": "/*\n * Minified version of CodeParadise VM (based on SqueakJS VM)\n * SqueakJS VM: Copyright (c) 2013-2025 Vanessa Freudenberg\n * CodeParadise: https://github.com/ErikOnBike/CodeParadise\n */"
   },
   "ecma": 2022,
   "keep_classnames": true
