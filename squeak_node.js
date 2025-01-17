@@ -163,48 +163,22 @@ fs.readFile(root + imageName + ".image", function(error, data) {
         // Create fake display and create interpreter
         var display = { vmOptions: [ "-vm-display-null", "-nodisplay" ] };
         var vm = new Squeak.Interpreter(image, display);
-        vm.processLoopCounter = 0;
-        vm.runProcessLoop = function(restart) {
-            if(restart === true) {
-                // Don't restart if process loop wasn't stopped before
-                if(!vm.stoppedProcessLoop) {
-                    return;
-                }
-                // Don't restart if there is no active Process
-                var activeProcess = vm.primHandler.getScheduler().pointers[Squeak.ProcSched_activeProcess];
-                if(!activeProcess || activeProcess.isNil) {
-                    return;
-                }
-                vm.stoppedProcessLoop = false;
-                vm.processLoopCounter = 0;
-            }
+        function run() {
             try {
-                vm.interpret(50, function runAgain(ms) {
-                    if(ms === "sleep") {
-                        if(vm.stoppedProcessLoop) {
-                            return;
-                        }
-
-                        // If we encounter a sleep for 8 consecutive times, stop process loop
-                        if(++vm.processLoopCounter > 7) {
-                            vm.stoppedProcessLoop = true;
-                        }
-                    } else {
-                        vm.processLoopCounter = 0;
-                    }
+                vm.interpret(200, function runAgain(ms) {
 
                     // Ignore display.quitFlag when requested.
                     // Some Smalltalk images quit when no display is found.
                     if (ignoreQuit || !display.quitFlag) {
-                        setTimeout(vm.runProcessLoop, ms === "sleep" ? 10 : ms);
+                        setTimeout(run, ms === "sleep" ? 10 : ms);
                     }
                 });
             } catch(e) {
                 console.error("Failure during Squeak run: ", e);
             }
-        };
+        }
 
         // Start the interpreter
-        vm.runProcessLoop();
+        run();
     });
 });
