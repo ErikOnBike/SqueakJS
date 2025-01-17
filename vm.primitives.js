@@ -1767,12 +1767,6 @@ Object.subclass('Squeak.Primitives',
         if (process === this.activeProcess()) {
             this.vm.popNandPush(1, this.vm.nilObj);
             this.transferTo(this.wakeHighestPriority());
-        } else if (process.runProcess) {
-            // CodeParadise specific code:
-            // Do not actually suspend a synchronous internal process.
-            // A link to the internal process is maintained elsewhere,
-            // so simply ignore it here.
-            this.vm.popNandPush(1, this.vm.nilObj);
         } else {
             var oldList = process.pointers[Squeak.Proc_myList];
             if (oldList.isNil) return false;
@@ -1791,43 +1785,17 @@ Object.subclass('Squeak.Primitives',
         return this.getScheduler().pointers[Squeak.ProcSched_activeProcess];
     },
     resume: function(newProc) {
-        // CodeParadise specific code:
-        // This should not happen, but if a synchronous internal process
-        // is resumed, try to run it to completion directly.
-        // Normally this type of process is resumed by calling their runProcess()
-        // method from a handler (like the event or transition handler in the
-        // DOM plugin).
-        if(newProc.runProcess) {
-            newProc.runProcess();
-            return;
-        }
-
         var activeProc = this.activeProcess();
-        if(activeProc.runProcess) {
-            // CodeParadise specific code:
-            // If a regular Process is resumed before a synchronous internal
-            // process has finished, put the regular process to sleep and let
-            // the internal process continue.
-            this.putToSleep(newProc);
+        var activePriority = activeProc.pointers[Squeak.Proc_priority];
+        var newPriority = newProc.pointers[Squeak.Proc_priority];
+        if (newPriority > activePriority) {
+            this.putToSleep(activeProc);
+            this.transferTo(newProc);
         } else {
-            // Regular Process switch
-            var activePriority = activeProc.pointers[Squeak.Proc_priority];
-            var newPriority = newProc.pointers[Squeak.Proc_priority];
-            if (newPriority > activePriority) {
-                this.putToSleep(activeProc);
-                this.transferTo(newProc);
-            } else {
-                this.putToSleep(newProc);
-            }
+            this.putToSleep(newProc);
         }
     },
     putToSleep: function(aProcess) {
-        // Do not put synchronous internal processes to sleep (they shoul be kept
-        if (aProcess === null) return;
-        // CodeParadise specific code:
-        if (aProcess.runProcess) {
-            return;
-        }
         //Save the given process on the scheduler process list for its priority.
         var priority = aProcess.pointers[Squeak.Proc_priority];
         var processLists = this.getScheduler().pointers[Squeak.ProcSched_processLists];
@@ -1838,20 +1806,13 @@ Object.subclass('Squeak.Primitives',
         //Record a process to be awakened on the next interpreter cycle.
         var sched = this.getScheduler();
         var oldProc = sched.pointers[Squeak.ProcSched_activeProcess];
-        if(oldProc === newProc) {
-            return;
-        }
         sched.pointers[Squeak.ProcSched_activeProcess] = newProc;
         sched.dirty = true;
-        if(oldProc !== null) {
-          oldProc.pointers[Squeak.Proc_suspendedContext] = this.vm.activeContext;
-          oldProc.dirty = true;
-        }
-        if(newProc !== null) {
-          this.vm.newActiveContext(newProc.pointers[Squeak.Proc_suspendedContext]);
-          newProc.pointers[Squeak.Proc_suspendedContext] = this.vm.nilObj;
-          if (!this.oldPrims) newProc.pointers[Squeak.Proc_myList] = this.vm.nilObj;
-        }
+        oldProc.pointers[Squeak.Proc_suspendedContext] = this.vm.activeContext;
+        oldProc.dirty = true;
+        this.vm.newActiveContext(newProc.pointers[Squeak.Proc_suspendedContext]);
+        newProc.pointers[Squeak.Proc_suspendedContext] = this.vm.nilObj;
+        if (!this.oldPrims) newProc.pointers[Squeak.Proc_myList] = this.vm.nilObj;
         this.vm.reclaimableContextCount = 0;
         if (this.vm.breakOnContextChanged) {
             this.vm.breakOnContextChanged = false;
@@ -1869,7 +1830,7 @@ Object.subclass('Squeak.Primitives',
         var p = schedLists.pointersSize() - 1;  // index of last indexable field
         var processList;
         do {
-            if (p < 0) return null;
+            if (p < 0) throw Error("scheduler could not find a runnable process");
             processList = schedLists.pointers[p--];
         } while (this.isEmptyList(processList));
         return this.removeFirstLinkOfList(processList);
