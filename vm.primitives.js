@@ -908,15 +908,24 @@ Object.subclass('Squeak.Primitives',
     },
     isKindOf: function(obj, knownClass) {
         var classOrSuper = obj.sqClass;
-        var theClass = this.vm.specialObjects[knownClass];
+        var theClass = typeof knownClass === "number" ? this.vm.specialObjects[knownClass] : knownClass;
         while (!classOrSuper.isNil) {
             if (classOrSuper === theClass) return true;
-            classOrSuper = classOrSuper.pointers[Squeak.Class_superclass];
+            classOrSuper = classOrSuper.superclass();
         }
         return false;
     },
     isAssociation: function(obj) {
-        return typeof obj !== "number" && obj.pointersSize() == 2;
+        if (this.associationClass && obj.sqClass === this.associationClass) return true;
+        if (!obj.pointers || obj.pointers.length !== 2) return false;
+        // we know the Processor binding is "like" an association, but in newer images it's
+        // actually a Binding object, which only shares the superclass LookupKey with Association
+        var lookupKeyClass = this.vm.specialObjects[Squeak.splOb_SchedulerAssociation].sqClass;
+        while (lookupKeyClass.superclass().classInstSize() > 0)
+            lookupKeyClass = lookupKeyClass.superclass();
+        var isAssociation = this.isKindOf(obj, lookupKeyClass);
+        if (isAssociation) this.associationClass = obj.sqClass; // cache for next time
+        return isAssociation;
     },
     ensureSmallInt: function(number) {
         if (number === (number|0) && this.vm.canBeSmallInt(number))
