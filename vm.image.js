@@ -139,8 +139,6 @@ Object.subclass('Squeak.Image',
         var is64Bit = version >= 68000;
         if (is64Bit && !this.isSpur) throw Error("64 bit non-spur images not supported yet");
         if (is64Bit)  { readWord = readWord64; wordSize = 8; }
-        this.is64Bit = is64Bit;
-        console.log(`squeak: Image Spur: ${this.isSpur} is64Bit: ${is64Bit} hasClosures: ${this.hasClosures} version: ${version}`);
         // parse image header
         var imageHeaderSize = readWord32(); // always 32 bits
         var objectMemorySize = readWord(); //first unused location in heap
@@ -321,14 +319,6 @@ Object.subclass('Squeak.Image',
         }
         var obj = this.firstOldObject,
             done = 0;
-        // Hack for the tiny image in CodeParadise to keep floats alive.
-        // The tiny image does not have BoxedFloat64 and only a Float
-        // class. When saving/snapshotting an image Float will be deleted
-        // from the class table. To fix this, the class hash is set explicitly.
-        // Apart from that, snapshotting seems to work correctly, even if
-        // multiple classes are freed during snapshot (which feels awkward).
-        // Tried adding a BoxedFloat64 class, but similar issues remained.
-        floatClass.hash = 34;
         var mapSomeObjects = function() {
             if (obj) {
                 var stop = done + (this.oldSpaceCount / 20 | 0);    // do it in 20 chunks
@@ -824,11 +814,6 @@ Object.subclass('Squeak.Image',
                 this.classTable[fromHash] = toArray[i];
             }
             if (twoWay && this.isSpur && this.classTable[toArray[i].hash] === toArray[i]) {
-var fromClass = fromArray[i];
-var fromClassName = fromClass.className ? fromClass.className() : fromClass.sqClass.className();
-var toClass = toArray[i];
-var toClassName = toClass.className ? toClass.className() : toClass.sqClass.className();
-console.warn("Unexpected two way class become", fromClassName, toClassName);
                 this.classTable[toArray[i].hash] = fromArray[i];
             }
         }
@@ -1126,8 +1111,8 @@ console.warn("Unexpected two way class become", fromClassName, toClassName);
         var prevObj = segmentWordArray,
             endMarker = prevObj.nextObject,
             oopOffset = segmentWordArray.oop,
-            oopMap = {},
-            rawBits = {};
+            oopMap = new Map(),
+            rawBits = new Map();
         while (pos < segment.byteLength) {
             var nWords = 0,
                 classInt = 0,
@@ -1162,7 +1147,7 @@ console.warn("Unexpected two way class become", fromClassName, toClassName);
             prevObj.nextObject = object;
             this.oldSpaceCount++;
             prevObj = object;
-            oopMap.get(oop) = object;
+            oopMap.set(oop, object);
             rawBits.set(oop + oopOffset, bits);
         }
         object.nextObject = endMarker;
@@ -1251,9 +1236,7 @@ console.warn("Unexpected two way class become", fromClassName, toClassName);
         this.largeNegIntClass = oopMap.get(special[Squeak.splOb_ClassLargeNegativeInteger]);
         // init named prototypes
         this.characterClass.classInstProto("Character");
-        // In the tiny image for CodeParadise no BoxedFloat64 exists, use Float instead
-        //this.floatClass.classInstProto("BoxedFloat64");
-        this.floatClass.classInstProto("Float");
+        this.floatClass.classInstProto("BoxedFloat64");
         this.largePosIntClass.classInstProto("LargePositiveInteger");
         this.largeNegIntClass.classInstProto("LargeNegativeInteger");
         this.characterTable = {};
