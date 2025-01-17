@@ -2193,7 +2193,7 @@ Object.subclass('Squeak.Primitives',
         // Write snapshot if files are supported
         if (Squeak.flushAllFiles) {
             Squeak.flushAllFiles();                         // so there are no more writes pending
-            Squeak.filePut(this.vm.image.name + ".image", buffer);
+            Squeak.filePut(this.vm.image.name, buffer);
         }
         this.vm.popNandPush(1, this.vm.falseObj);       // put false on stack for continuing
         return true;
