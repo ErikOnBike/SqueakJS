@@ -64,38 +64,9 @@ Object.assign(global, {
     })
 });
 
-// Add a sessionStorage class
-class SessionStorage {
-	storage = {}
-
-	constructor() {
-		var self = this;
-		Object.keys(process.env).forEach(function(key) {
-			self.storage[key] = process.env[key];
-		});
-		self.storage["CLIENT_VERSION"] = "2";
-	}
-	getItem(name) {
-		return this.storage[name];
-	}
-	setItem(name, value) {
-		this.storage[name] = value;
-	}
-	removeItem(name) {
-		delete this.storage[name];
-	}
-	get length() {
-		return Object.keys(this.storage).length;
-	}
-	key(index) {
-		return Object.keys(this.storage)[index];
-	}
-}
-
 // Extend the new global scope with a few browser/DOM classes and methods
 Object.assign(self, {
     localStorage: {},
-    sessionStorage: new SessionStorage(),
     WebSocket: typeof WebSocket === "undefined" ? require("./lib_node/WebSocket") : WebSocket,
     sha1: require("./lib/sha1"),
     btoa: function(string) {
