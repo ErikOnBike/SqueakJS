@@ -149,8 +149,9 @@ Object.subclass('Squeak.Interpreter',
         }
     },
     hackImage: function() {
+/*
         // hack methods to make work / speed up
-/*      var returnSelf  = 256,
+        var returnSelf  = 256,
             returnTrue  = 257,
             returnFalse = 258,
             returnNil   = 259,
@@ -191,7 +192,8 @@ Object.subclass('Squeak.Interpreter',
             }
 
         }, this);
-*/  },
+*/
+    },
 },
 'interpreting', {
     interpretOne: function(singleStep) {
