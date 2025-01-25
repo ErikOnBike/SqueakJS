@@ -10,7 +10,7 @@ module.exports = {
 	},
 	plugins: [
 		replace({
-			"vmBuild: \"unknown\"": "vmBuild: \"cp-" + new Date().toISOString().replace(/T.*/, "").replace(/-/, "") + "\"",
+			"vmBuild: \"unknown\"": "vmBuild: \"cp-" + new Date().toISOString().replace(/T.*/, "").replace(/-/g, "") + "\"",
 			delimiters: [ "", "" ],
 			preventAssignment: true	// Prevent warning message
 		}),
