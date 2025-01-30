@@ -272,7 +272,6 @@
       Proc_suspendedContext: 1,
       Proc_priority: 2,
       Proc_myList: 3,
-      Proc_name: 4,
       // Association layout:
       Assn_key: 0,
       Assn_value: 1,
@@ -11521,16 +11520,6 @@
           thisHandle.vm.runInterpreter(true);
         };
       },
-      newSyncProcess: function(processName) {
-        var process = this.vm.instantiateClass(this.processClass, 0);
-        process.pointers[Squeak.Proc_priority] = this.syncProcessPriority;
-        if(processName) {
-          process.pointers[Squeak.Proc_name] = this.primHandler.makeStString(processName);
-          process.dirty = true;
-        }
-        this.makeProcessSynchronous(process);
-        return process;
-      },
       newProcessForContext: function(context) {
         // Create a new synchronous Process for the specified Context.
         // Normally this Context is created from a Smalltalk Block
@@ -11539,9 +11528,13 @@
         // allows Smalltalk Blocks to be used in callbacks or Promises.
         // It therefore allows Smalltalk to be used inside JavaScript,
         // next to already allowing JavaScript to be used inside Smalltalk.
-        var process = this.newSyncProcess();
+        var process = this.vm.instantiateClass(this.processClass, 0);
+        process.pointers[Squeak.Proc_priority] = this.syncProcessPriority;
         process.pointers[Squeak.Proc_suspendedContext] = context;
         process.dirty = true;
+
+        // Make the Process synchronous to prevent it being put to sleep
+        this.makeProcessSynchronous(process);
 
         return process;
       },
@@ -14179,15 +14172,12 @@
           vm.interpreterRestartTimeout = null;
           vm.runInterpreter = function(restart) {
 
-            // Handle restart while already running
-            if(restart && vm.interpreterIsRunning) {
-
-              // If restarting while in timeout waiting, skip waiting
-              if(vm.interpreterRestartTimeout) {
-                globalThis.clearTimeout(vm.interpreterRestartTimeout);
-                vm.interpreterRestartTimeout = null;
-              }
+            // If restarting while in timeout waiting, skip waiting
+            if(restart && vm.interpreterRestartTimeout) {
+              globalThis.clearTimeout(vm.interpreterRestartTimeout);
             }
+            vm.interpreterRestartTimeout = null;
+
             try {
               // Keep track of active Process if it should run synchronously
               var syncProcess = vm.activeProcess();
