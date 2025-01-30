@@ -1126,8 +1126,8 @@ console.warn("Unexpected two way class become", fromClassName, toClassName);
         var prevObj = segmentWordArray,
             endMarker = prevObj.nextObject,
             oopOffset = segmentWordArray.oop,
-            oopMap = {},
-            rawBits = {};
+            oopMap = new Map(),
+            rawBits = new Map();
         while (pos < segment.byteLength) {
             var nWords = 0,
                 classInt = 0,
@@ -1162,7 +1162,7 @@ console.warn("Unexpected two way class become", fromClassName, toClassName);
             prevObj.nextObject = object;
             this.oldSpaceCount++;
             prevObj = object;
-            oopMap.get(oop) = object;
+            oopMap.set(oop, object);
             rawBits.set(oop + oopOffset, bits);
         }
         object.nextObject = endMarker;
