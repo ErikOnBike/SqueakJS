@@ -76,16 +76,6 @@ function CpSystemPlugin() {
         thisHandle.vm.runInterpreter(true);
       };
     },
-    newSyncProcess: function(processName) {
-      var process = this.vm.instantiateClass(this.processClass, 0);
-      process.pointers[Squeak.Proc_priority] = this.syncProcessPriority;
-      if(processName) {
-        process.pointers[Squeak.Proc_name] = this.primHandler.makeStString(processName);
-        process.dirty = true;
-      }
-      this.makeProcessSynchronous(process);
-      return process;
-    },
     newProcessForContext: function(context) {
       // Create a new synchronous Process for the specified Context.
       // Normally this Context is created from a Smalltalk Block
@@ -94,9 +84,13 @@ function CpSystemPlugin() {
       // allows Smalltalk Blocks to be used in callbacks or Promises.
       // It therefore allows Smalltalk to be used inside JavaScript,
       // next to already allowing JavaScript to be used inside Smalltalk.
-      var process = this.newSyncProcess();
+      var process = this.vm.instantiateClass(this.processClass, 0);
+      process.pointers[Squeak.Proc_priority] = this.syncProcessPriority;
       process.pointers[Squeak.Proc_suspendedContext] = context;
       process.dirty = true;
+
+      // Make the Process synchronous to prevent it being put to sleep
+      this.makeProcessSynchronous(process);
 
       return process;
     },
