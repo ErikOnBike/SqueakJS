@@ -49,16 +49,16 @@ function CpDOMPlugin() {
       if(this.originalMakeStObject) {
         return; // Already installed
       }
-      var self = this;
-      self.originalMakeStObject = this.primHandler.makeStObject;
+      var thisHandle = this;
+      this.originalMakeStObject = this.primHandler.makeStObject;
       this.primHandler.makeStObject = function(obj, proxyClass, seen) {
         if(obj !== undefined && obj !== null) {
           // Check for DOM element (it will use own internal wrapping, do not use 'seen' here)
           if(obj.querySelectorAll) {
-            return self.instanceForElement(obj);
+            return thisHandle.instanceForElement(obj);
           }
         }
-        return self.originalMakeStObject.call(this, obj, proxyClass, seen);
+        return thisHandle.originalMakeStObject.call(this, obj, proxyClass, seen);
       };
       // Make sure document has a localName
       window.document.localName = "document";
@@ -164,6 +164,7 @@ function CpDOMPlugin() {
       domRectangleClass.allInstVarNames().forEach(function(name, index) {
         if(rectangle[name] !== undefined) {
           domRectangle.pointers[index] = primHandler.makeStObject(rectangle[name]);
+          domRectangle.dirty = true;
         }
       });
       return domRectangle;
@@ -925,6 +926,14 @@ function CpDOMPlugin() {
 
     // Update process
     runUpdateProcess: function() {
+      // The update Process is executed using RAF (Request Animation Frame).
+      // Many browsers stop executing RAF when the browser or the specific browser tab
+      // is not focussed. This prevents unnecessary execution of code if there is nothing
+      // visible to update. As soon as the browser (tab) becomes active again, it will
+      // resume RAF execution. Any pending events (like incoming data) will be handled in
+      // the order arrived. Transitions will also resume (or receive their terminating
+      // call if the duration has passed, allowing correct final state/clean up to be
+      // shown/performed).
       let thisHandle = this;
       window.requestAnimationFrame(function() {
         thisHandle.handleEvents();
@@ -937,7 +946,7 @@ function CpDOMPlugin() {
       if(this.eventsReceived.length > 0 && this.eventHandlerProcess && !this.eventHandlerProcess.isRunning) {
         try {
           this.eventHandlerProcess.isRunning = true;
-          this.eventHandlerProcess.runProcess();
+          this.eventHandlerProcess.run();
         } finally {
           this.eventHandlerProcess.isRunning = false;
         }
@@ -947,7 +956,8 @@ function CpDOMPlugin() {
     // Event class methods
     "primitiveEventRegisterProcess:": function(argCount) {
       if(argCount !== 1) return false;
-      this.eventHandlerProcess = this.systemPlugin.newProcessForContext(this.interpreterProxy.stackValue(0), this.primHandler.makeStString("Event"));
+      this.eventHandlerProcess = this.interpreterProxy.stackValue(0);
+      this.systemPlugin.makeProcessSynchronous(this.eventHandlerProcess);
       return this.answerSelf(argCount);
     },
     "primitiveEventRegisterClass:forType:": function(argCount) {
@@ -1172,7 +1182,8 @@ function CpDOMPlugin() {
     // Transition class methods
     "primitiveTransitionRegisterProcess:": function(argCount) {
       if(argCount !== 1) return false;
-      this.transitionProcess = this.systemPlugin.newProcessForContext(this.interpreterProxy.stackValue(0), this.primHandler.makeStString("Transition"));
+      this.transitionProcess = this.interpreterProxy.stackValue(0);
+      this.systemPlugin.makeProcessSynchronous(this.transitionProcess);
       return this.answerSelf(argCount);
     },
     "primitiveTransitionHasTransitions:": function(argCount) {
@@ -1189,7 +1200,7 @@ function CpDOMPlugin() {
       // never called while already running (always called in RequestAnimationFrame loop).
       // Therefore no need to check if it is already running.
       if(this.transitionProcess && this.hasTransitions) {
-        this.transitionProcess.runProcess();
+        this.transitionProcess.run();
       }
     }
   };

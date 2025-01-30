@@ -7,7 +7,6 @@ function CpSystemPlugin() {
     primHandler: null,
 
     setInterpreter: function(anInterpreter) {
-      this.setupGlobalObject();
       this.interpreterProxy = anInterpreter;
       this.vm = anInterpreter.vm;
       this.primHandler = this.vm.primHandler;
@@ -27,7 +26,8 @@ function CpSystemPlugin() {
       this.largeNegativeIntegerClass = this.vm.globalNamed("LargeNegativeInteger");
       this.contextClass = this.vm.globalNamed("Context");
       this.processClass = this.vm.globalNamed("Process");
-      this.maxProcessPriority = this.primHandler.getScheduler().pointers[Squeak.ProcSched_processLists].pointersSize();
+      this.scheduler = this.primHandler.getScheduler();
+      this.syncProcessPriority = this.scheduler.pointers[Squeak.ProcSched_processLists].pointersSize();
       this.globalProxyClasses = {};
       this.lastException = null;
       this.updateStringSupport();
@@ -36,92 +36,75 @@ function CpSystemPlugin() {
       return true;
     },
 
-    // Helper method to create a global scope (working similarly in Browser and in NodeJS).
-    // Since ES2020 there should be a globalThis we can use. If not present, create one.
-    setupGlobalObject: function() {
-      if(typeof window !== 'undefined') {
-        // For Browser environment create a global object named 'globalThis'.
-        if(!window.globalThis) {
-          window.globalThis = window;
-        }
-      } else {
-        // For Node.js environment create a global object named 'globalThis'.
-        if(!global.globalThis) {
-          global.globalThis = global;
-        }
-        // For Node.js make 'require' an actual global function and replace constructor to prevent
-        // it from being characterized as a Dictionary (when processing in makeStObject).
-        globalThis.require = function(name) {
-          var module = require(name);
-          Object.keys(module).forEach(function(key) {
-            // Check for classes (not 100% check, okay if we give to many objects an internal property)
-            // See also:
-            // https://stackoverflow.com/questions/40922531/how-to-check-if-a-javascript-function-is-a-constructor
-            // Assume classes have uppercase first character
-            if(key[0] >= "A" && key[0] <= "Z") {
-              var value = module[key];
-              if(value && value.constructor && value.prototype && value === value.prototype.constructor) {
-                value.__cp_className = name + "." + key;
-              }
+    // Helper methods for running a process synchronous (i.e. uninterrupted)
+    makeProcessSynchronous: function(process) {
+      var thisHandle = this;
+      process.isSync = true;
+      process.run = function() {
+
+        // Make the Process active and start interpreting its code
+        var activeProcess = thisHandle.scheduler.pointers[Squeak.ProcSched_activeProcess];
+        var primHandler = thisHandle.primHandler;
+        if(activeProcess !== process) {
+          // If activeProcess is a synchronous Process, make sure it gets resumed
+          // immediately after the new Process has terminated/is suspended.
+          if(activeProcess.isSync) {
+
+            // Put this synchronous Process at the front of the relevant Process list,
+            // so it will be made active during wakeHighestPriority() on suspension
+            // or termination of the new synchronous Process.
+            var processList = thisHandle.scheduler.pointers[Squeak.ProcSched_processLists].pointers[thisHandle.syncProcessPriority - 1];
+            if(primHandler.isEmptyList(processList)) {
+              processList.pointers[Squeak.LinkedList_lastLink] = activeProcess;
+            } else {
+              var firstLink = processList.pointers[Squeak.LinkedList_firstLink];
+              activeProcess.pointers[Squeak.Link_nextLink] = firstLink;
             }
-          });
-          return module;
-        };
-        globalThis.constructor = function() {};
-      }
+            processList.pointers[Squeak.LinkedList_firstLink] = activeProcess;
+            processList.dirty = true;
+            activeProcess.pointers[Squeak.Proc_myList] = processList;
+            activeProcess.dirty = true;
+          } else {
 
-      // Create global function to let objects 'identify' themselves (used for Proxy-ing JavaScript objects).
-      // For undefined or null, answer the global object itself.
-      globalThis.identity = function(x) { return x === undefined || x === null ? globalThis : x; };
-    },
-
-    // Helper method for running a process uninterrupted
-    runUninterrupted: function(process) {
-      // Make specified process the new active Process (disregard Process priorities).
-      // The current active Process is maintained and restored after the new Process
-      // has finished or suspends itself.
-      var primHandler = this.primHandler;
-      var schedulerPointers = primHandler.getScheduler().pointers;
-      var activeProcess = schedulerPointers[Squeak.ProcSched_activeProcess];
-      if(activeProcess && !activeProcess.runProcess) {
-        primHandler.putToSleep(activeProcess);
-      }
-      primHandler.transferTo(process);
-
-      // Run the specified process until the process is finished or suspends itself.
-      // No other Process will be able to run, except for other uninterruptable Processes.
-      // This allows nested JavaScriptFunction (wrappers) to execute JavaScript code
-      // synchronously (without being pre-empted).
-      // This 'runner' assumes the process runs 'quickly'.
-      var vm = this.vm;
-      var compiled;
-      do {
-        if(compiled = vm.method.compiled) {
-          compiled(vm);
-        } else {
-          vm.interpretOneSistaWithExtensions(false, 0, 0);
+            // Put the (regular) Process to sleep, it will be woken up again later
+            primHandler.putToSleep(activeProcess);
+          }
+          primHandler.transferTo(process);
         }
-      } while(process === schedulerPointers[Squeak.ProcSched_activeProcess]);
 
-      // Restore active Process
-      if(activeProcess) {
-        primHandler.transferTo(activeProcess);
+        // Start the interpreter to execute the Process
+        thisHandle.vm.runInterpreter(true);
+      };
+    },
+    newSyncProcess: function(processName) {
+      var process = this.vm.instantiateClass(this.processClass, 0);
+      process.pointers[Squeak.Proc_priority] = this.syncProcessPriority;
+      if(processName) {
+        process.pointers[Squeak.Proc_name] = this.primHandler.makeStString(processName);
+        process.dirty = true;
       }
+      this.makeProcessSynchronous(process);
+      return process;
+    },
+    newProcessForContext: function(context) {
+      // Create a new synchronous Process for the specified Context.
+      // Normally this Context is created from a Smalltalk Block
+      // through CpJavaScriptFunction class >> #wrap:
+      // This mechanism of wrapping Blocks in JavaScript functions
+      // allows Smalltalk Blocks to be used in callbacks or Promises.
+      // It therefore allows Smalltalk to be used inside JavaScript,
+      // next to already allowing JavaScript to be used inside Smalltalk.
+      var process = this.newSyncProcess();
+      process.pointers[Squeak.Proc_suspendedContext] = context;
+      process.dirty = true;
 
-      /*
-      activeProcess = schedulerPointers[Squeak.ProcSched_activeProcess];
-      if(activeProcess && activeProcess.pointers[Squeak.Proc_priority] < this.maxProcessPriority && vm.stoppedProcessLoop) {
-        globalThis.setTimeout(function() {
-          vm.runProcessLoop(true);
-        }, 0);
-      }
-      */
+      return process;
     },
 
     // Add helper method to restart process loop on semaphore update
     signalSemaphoreWithIndex: function(index) {
-      this.vm.runProcessLoop(true);
       this.primHandler.signalSemaphoreWithIndex(index);
+      this.vm.runInterpreter(true);
     },
 
     // Helper methods for creating or converting Smalltalk and JavaScript objects
@@ -163,8 +146,9 @@ function CpSystemPlugin() {
       // Keep track of SmallInteger min and max value.
       // 64-bit images have 61-bit SmallIntegers, 32-bit images have 31-bit SmallIntegers.
       // Since JavaScript only supports 53-bits integers, use that max in 64-bit images.
-      this.minSmallInteger = this.vm.image.is64Bit ? Number.MIN_SAFE_INTEGER : -0x40000000;
-      this.maxSmallInteger = this.vm.image.is64Bit ? Number.MAX_SAFE_INTEGER :  0x3FFFFFFF;
+      var is64Bit = this.vm.image.version >= 68000;
+      this.minSmallInteger = is64Bit ? Number.MIN_SAFE_INTEGER : -0x40000000;
+      this.maxSmallInteger = is64Bit ? Number.MAX_SAFE_INTEGER :  0x3FFFFFFF;
       this.primHandler.makeStObject = function(obj, proxyClass, seen) {
         // Check for special 'primitive' objects (no need to use 'seen' here)
         if(obj === undefined || obj === null) return this.vm.nilObj;
@@ -274,6 +258,8 @@ function CpSystemPlugin() {
         for(var i = 0; i < obj.length; i++) {
           array.pointers[i] = this.makeStObject(obj[i], proxyClass, seen);
         }
+        array.dirty = obj.length > 0;
+
         return array;
       };
     },
@@ -305,6 +291,8 @@ function CpSystemPlugin() {
       // Assume instVars are #key and #value (in that order)
       association.pointers[0] = this.primHandler.makeStObject(key, undefined, seen);
       association.pointers[1] = this.primHandler.makeStObject(value, undefined, seen);
+      association.dirty = true;
+
       return association;
     },
     makeStOrderedDictionary: function(obj, seen) {
@@ -326,6 +314,7 @@ function CpSystemPlugin() {
       // Create array with ordered keys
       var orderedKeys = this.primHandler.makeStArray(Object.keys(obj), undefined, seen);
       orderedDictionary.pointers[1] = orderedKeys;
+      orderedDictionary.dirty = Object.keys(obj).length > 0;
 
       return orderedDictionary;
     },
@@ -380,6 +369,8 @@ function CpSystemPlugin() {
       // Assume instVars are #tally and #array (in that order)
       dictionary.pointers[0] = keys.length;
       dictionary.pointers[1] = this.primHandler.makeStArray(associations, undefined, seen);
+      dictionary.dirty = keys.length > 0;
+
       return dictionary;
     },
     findSeenObj: function(seen, jsObj) {
@@ -485,70 +476,38 @@ function CpSystemPlugin() {
       var thisHandle = this;
       var func = function() {
 
-        // Create a copy of the Context to allow performing it multiple times.
+        // Create a copy of the Context to allow executing it multiple times.
         var context = thisHandle.vm.image.clone(obj);
 
-        // Add the Context to the function (required for JavaScriptFunction >> #arguments
-        // and JavaScriptFunction >> #setResult:)
-        func.__cp_context = context;
-
-        // Register the function arguments in the Context.
+        // Register the function arguments with the function.
         // This is used by JavaScriptFunction >> #arguments.
         var funcArgs = Array.from(arguments);
         var blockArgs = funcArgs.map(function(each) {
           return thisHandle.primHandler.makeStObject(each);
         });
-        context.__cp_func_arguments = blockArgs;
+        func.__cp_func_arguments = blockArgs;
 
-        // Create a Process for the context
+        // Create a synchronous Process for the context
         var process = thisHandle.newProcessForContext(context);
 
-        // Run the process (now it is setup) and keep result
-        var processResult = process.runProcess();
+        // Run the process
+        process.run();
+
+        // The result should have been stored by CpJavaScriptFunction >> #setResult:
+        // Check if result is an error (recognized by cause, to allow functions to
+        // answer Error instances as well as throw Errors). If an error, throw it.
+        var result = func.__cp_func_result;
+        var isError = result instanceof Error && result.cause && result.cause.sqClass;
 
         // Throw in case of error
-        if(processResult.error) {
-          throw processResult.error;
+        if(isError) {
+          throw result;
         }
 
-        return processResult.answer;
+        return result;
       };
 
       return func;
-    },
-    newProcessForContext: function(context, processName) {
-      // Create a new Process to execute the specified Context.
-      // Normally this Context is created from a Smalltalk Block
-      // through either CpJavaScriptFunction class >> #wrap:
-      // or in either CpEvent class >> #registerEventProcess: or
-      // CpTransition class >> #registerTransitionProcess:
-      // The mechanism of wrapping Blocks in JavaScript functions
-      // allows Smalltalk Blocks to be used in callbacks or Promises.
-      // It therefore allows Smalltalk to be used inside JavaScript,
-      // next to already allowing JavaScript to be used inside Smalltalk.
-      var process = this.vm.instantiateClass(this.processClass, 0);
-      process.pointers[Squeak.Proc_suspendedContext] = context;
-      process.pointers[Squeak.Proc_priority] = this.maxProcessPriority;
-      if(processName) {
-        process.pointers[Squeak.Proc_name] = processName;
-      }
-      var thisHandle = this;
-      process.runProcess = function() {
-
-        // Execute the Process
-        thisHandle.runUninterrupted(process);
-
-        // The result should have been stored by the CpJavaScriptFunction >> #setResult: method for
-        // synchronous results.
-        // Check if result is an error (recognized by cause, to allow functions to answer Error instances).
-        var result = context.__cp_func_result;
-        var isError = result instanceof Error && result.cause && result.cause.sqClass;
-
-        // Answer result or error
-        return isError ? { error: result } : { answer: result };
-      };
-
-      return process;
     },
     isKindOf: function(sqClass, searchClass) {
       while(sqClass && !sqClass.isNil) {
@@ -587,6 +546,19 @@ function CpSystemPlugin() {
       var message = this.interpreterProxy.stackValue(0).asString();
       console.error((new Date()).toISOString() + " " + message);
       return this.answerSelf(argCount);
+    },
+
+    // Process instance methods
+    "primitiveProcessBeIdleProcess": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      this.vm.setIdleProcess(receiver);
+      return this.answerSelf(argCount);
+    },
+    "primitiveProcessIsSyncProcess": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      return this.answer(argCount, !!receiver.isSync);
     },
 
     // Symbol class methods
@@ -904,19 +876,16 @@ function CpSystemPlugin() {
     },
     "primitiveStringTrim": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
       var src = this.interpreterProxy.stackValue(argCount).asString();
       return this.answer(argCount, src.trim());
     },
     "primitiveStringTrimLeft": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
       var src = this.interpreterProxy.stackValue(argCount).asString();
       return this.answer(argCount, src.trimStart());
     },
     "primitiveStringTrimRight": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
       var src = this.interpreterProxy.stackValue(argCount).asString();
       return this.answer(argCount, src.trimEnd());
     },
@@ -1230,28 +1199,42 @@ function CpSystemPlugin() {
     },
 
     // JavaScriptFunction instance methods
-    "primitiveJavaScriptFunctionArguments": function(argCount) {
-      if(argCount !== 0) return false;
+    "primitiveJavaScriptFunctionArguments:": function(argCount) {
+      if(argCount !== 1) return false;
+      var count = this.interpreterProxy.stackValue(0);
       var receiver = this.interpreterProxy.stackValue(argCount);
       var jsFunc = receiver.jsObj;
       if(!jsFunc) return false;
-      var context = receiver.jsObj.__cp_context;
-      if(!context) return false;
 
-      // Retrieve arguments from the Context instance
-      return this.answer(argCount, context.__cp_func_arguments);
+      // Retrieve arguments from the Function instance.
+      // Add 'nils' to make the appropriate size.
+      var args = jsFunc.__cp_func_arguments.slice(0, count);
+      while(args.length < count) {
+        args.push(null);
+      }
+      return this.answer(argCount, args);
+    },
+    "primitiveJavaScriptFunctionSetBlock:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var block = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+      receiver.__cp_block = block;
+      return this.answerSelf(argCount);
+    },
+    "primitiveJavaScriptFunctionBlock": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      return this.answer(argCount, receiver.__cp_block);
     },
     "primitiveJavaScriptFunctionSetResult:": function(argCount) {
       if(argCount !== 1) return false;
       var receiver = this.interpreterProxy.stackValue(argCount);
       var jsFunc = receiver.jsObj;
       if(!jsFunc) return false;
-      var context = receiver.jsObj.__cp_context;
-      if(!context) return false;
       var result = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
 
       // Store the result in the Context instance
-      context.__cp_func_result = result;
+      jsFunc.__cp_func_result = result;
       return this.answerSelf(argCount);
     },
 
@@ -1463,10 +1446,56 @@ function CpSystemPlugin() {
   };
 }
 
+// Extend the Interpreter
+Object.extend(Squeak.Interpreter.prototype,
+  'syncProcess', {
+    activeProcess: function() {
+      if(!this.schedulerPointers) {
+        this.schedulerPointers = this.specialObjects[Squeak.splOb_SchedulerAssociation].pointers[Squeak.Assn_value].pointers;
+      }
+      return this.schedulerPointers[Squeak.ProcSched_activeProcess];
+    },
+    setIdleProcess: function(process) {
+      this.idleProcess = process;
+    },
+    inIdleProcess: function() {
+      // Answer whether a Process is active which is marked THE 'idle' Process.
+      // Be aware, this is not the same as using Process >> #idle in the tiny
+      // CodeParadise image. Marking a Process as the 'idle' Process will replace
+      // a previously marked Process. Use Process >> #beIdleProcess to mark it.
+      return this.idleProcess === this.activeProcess();
+    }
+  }
+);
+
+// Extend the Image
+Object.extend(Squeak.Image.prototype,
+  'fixes', {
+    fixFloat: function() {
+      // Hack for the tiny image in CodeParadise to keep floats alive.
+      // The tiny image does not have BoxedFloat64 and only a Float
+      // class. When saving/snapshotting an image Float will be deleted
+      // from the class table. To fix this, the class hash is set explicitly.
+      // Apart from that, snapshotting seems to work correctly, even if
+      // multiple classes are freed during snapshot (which feels awkward).
+      // Tried adding a BoxedFloat64 class, but similar issues remained.
+      // The code is added in the method initImmediateClasses() which occurs
+      // just before the mapSomeObjects() where the updated value is required.
+      this.origInitImmediateClasses = this.initImmediateClasses;
+      this.initImmediateClasses = function(oopMap, rawBits, splObs) {
+        var floatClass = oopMap.get(rawBits.get(splObs.oop)[Squeak.splOb_ClassFloat]);
+        floatClass.hash = 34;
+        floatClass.classInstProto("Float");
+        this.origInitImmediateClasses(oopMap, rawBits, splObs);
+      };
+    }
+  }
+);
+
 function registerCpSystemPlugin() {
-    if(typeof Squeak === "object" && Squeak.registerExternalModule) {
-        Squeak.registerExternalModule("CpSystemPlugin", CpSystemPlugin());
-    } else globalThis.setTimeout(registerCpSystemPlugin, 100);
+  if(typeof Squeak === "object" && Squeak.registerExternalModule) {
+    Squeak.registerExternalModule("CpSystemPlugin", CpSystemPlugin());
+  } else globalThis.setTimeout(registerCpSystemPlugin, 100);
 };
 
 registerCpSystemPlugin();

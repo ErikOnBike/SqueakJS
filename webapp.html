@@ -3,59 +3,94 @@
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script type="module" src="app.js"></script>
-<!--
-  <script type="module" src="squeak_headless_bundle.js"></script>
--->
+  <style id="loader-style">
+    #loader-block {
+      display: none;
+      position: absolute;
+      width: 50%;
+      min-width: 20em;
+      height: 8rem;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+    #loader-block:first-child:last-child {
+      display: block;
+    }
+    #loader-block label {
+      display: block;
+      font-size: 32px;
+      margin-bottom: 1rem;
+    }
+    #loader-progress {
+      position: relative;
+      display: block;
+      width: 100%;
+      height: 20px;
+      border-radius: 10px;
+      border: 1px solid #333;
+      background-color: rgba(0, 0, 0, .1);
+      overflow: hidden;
+    }
+    #loader-progress-bar {
+      position: absolute;
+      height: 100%;
+      width: 50%;
+      border: none;
+      border-radius: 10px;
+      background-color: rgba(0, 0, 0, .4);
+    }
+    #loader-block:first-child:last-child #loader-progress-bar {
+      animation-duration: 2s;
+      animation-iteration-count: infinite;
+      animation-name: loader-progress-bar;
+    }
+    @keyframes loader-progress-bar {
+      from {
+        left: -50%;
+      }
+      to {
+        left: 100%;
+      }
+    }
+  </style>
+  <script type="module" src="./webapp_bundle.min.js"></script>
   <script>
+    // Set environment version (monotonic increasing counter, expecting exact match on server)
+    globalThis.sessionStorage.setItem("CLIENT_VERSION", "3");
+
     // Set application identifier
-    let appNameFromUrl = document.location.search.slice(1);
-    let appNameFromSession = window.sessionStorage.getItem("APP");
+    let appNameFromUrl = document.location.search.slice(1).replace(/&.*/, "");
+    let appNameFromSession = globalThis.sessionStorage.getItem("APP");
     if(appNameFromUrl !== appNameFromSession) {
       if(appNameFromSession) {
         // End previous session by removing the session id
-        window.sessionStorage.removeItem("CLIENT_ID");
+        globalThis.sessionStorage.removeItem("CLIENT_ID");
       }
-      window.sessionStorage.setItem("APP", appNameFromUrl);
-    }
-
-    // Extract location hash (optional action code)
-    let codeFromUrl = document.location.hash.slice(1);
-    if(codeFromUrl !== "") {
-        window.sessionStorage.setItem("CODE", codeFromUrl);
-        document.location.hash = "";
+      globalThis.sessionStorage.setItem("APP", appNameFromUrl);
     }
 
     // Set server location
-    window.sessionStorage.setItem("SERVER_URL", document.location.protocol.replace("http", "ws") + "//" + document.location.host + "/io");
+    globalThis.sessionStorage.setItem("SERVER_URL", document.location.protocol.replace("http", "ws") + "//" + document.location.host + "/io");
 
     // Set OS/platform identifier
-    let platform = navigator.platform;
-    window.sessionStorage.setItem("OS",
+    let platform = window.navigator.platform || "";
+    let appVersion = window.navigator.appVersion || "";
+    globalThis.sessionStorage.setItem("OS",
       platform.indexOf("Mac") >= 0 ? "macos" :
       platform.indexOf("Win") >= 0 ? "windows" :
       platform.indexOf("Linux") >= 0 ? "linux" :
+      appVersion.indexOf("Mac") >= 0 ? "macos" :
+      appVersion.indexOf("Win") >= 0 ? "windows" :
+      appVersion.indexOf("Linux") >= 0 ? "linux" :
       "unknown");
 
     // Load and start image if this page and its scripts are loaded
     window.addEventListener("load", function() {
-
-      // Add file interface
-      self.Squeak.flushAllFiles = function() {};
-      self.Squeak.filePut = function(name, buffer) {
-        let blob = new Blob([buffer]);
-        let link = document.createElement("a");
-        let url = URL.createObjectURL(blob);
-        link.setAttribute("href", url);
-        link.setAttribute("download", "client-environment.image");
-        link.style.visibility = "hidden";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      };
-      self.Squeak.fetchImageAndRun("client-environment.image", { ignoreQuit: false });
+      globalThis.Squeak.fetchImageAndRun("./client-environment.image");
     });
   </script>
 </head>
-<body></body>
+<body><div id="loader-block"><label>Loading...</label><div id="loader-progress"><div id="loader-progress-bar"></div></div></div></body>
 </html>
