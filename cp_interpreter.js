@@ -19,15 +19,12 @@ Object.extend(Squeak,
         vm.interpreterRestartTimeout = null;
         vm.runInterpreter = function(restart) {
 
-          // Handle restart while already running
-          if(restart && vm.interpreterIsRunning) {
-
-            // If restarting while in timeout waiting, skip waiting
-            if(vm.interpreterRestartTimeout) {
-              globalThis.clearTimeout(vm.interpreterRestartTimeout);
-              vm.interpreterRestartTimeout = null;
-            }
+          // If restarting while in timeout waiting, skip waiting
+          if(restart && vm.interpreterRestartTimeout) {
+            globalThis.clearTimeout(vm.interpreterRestartTimeout);
           }
+          vm.interpreterRestartTimeout = null;
+
           try {
             // Keep track of active Process if it should run synchronously
             var syncProcess = vm.activeProcess();
