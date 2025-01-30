@@ -155,7 +155,6 @@ Object.extend(Squeak,
     Proc_suspendedContext: 1,
     Proc_priority: 2,
     Proc_myList: 3,
-    Proc_name: 4,
     // Association layout:
     Assn_key: 0,
     Assn_value: 1,
