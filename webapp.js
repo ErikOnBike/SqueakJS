@@ -23,6 +23,11 @@ import "./plugins/CpSystemPlugin.js";
 import "./plugins/CpDOMPlugin.js";
 import "./cp_interpreter.js";
 
+// Add a global unhandled exception handler (only store the uncaught exception)
+window.addEventListener("unhandledrejection", function(event) {
+  globalThis.__cp_ue = { reason: event.reason, promise: event.promise };
+});
+
 // Extend Squeak with settings and options to fetch and run image
 Object.extend(Squeak, {
   vmPath: "/",

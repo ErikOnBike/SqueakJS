@@ -5,60 +5,68 @@ var fs = require("fs");
 var process = require("process");
 var path = require("path");
 
+// Add a global unhandled exception handler (only store the uncaught exception)
+process.on("uncaughtException", function(error) {
+  globalThis.__cp_ue = { error: error };
+});
+process.on("unhandledRejection", function(reason, promise) {
+  globalThis.__cp_ue = { reason: reason, promise: promise };
+});
+
 // Retrieve image name and parameters from command line
 var processArgs = process.argv.slice(2);
 var fullName = processArgs[0];
-if (!fullName) {
-    console.error("No image name specified.");
-    console.log("Usage (simplified): " + path.basename(process.argv0) + path.basename(process.argv[1]) + " <image filename>");
-    process.exit(1);
+if(!fullName) {
+  console.error("No image name specified.");
+  console.log("Usage (simplified): " + path.basename(process.argv0) + path.basename(process.argv[1]) + " <image filename>");
+  process.exit(1);
 }
 var root = path.dirname(fullName) + path.sep;
 var imageName = path.basename(fullName, ".image");
 
 // Add a sessionStorage class
 class SessionStorage {
-	storage = {}
+  storage = {}
 
-	constructor() {
-		var self = this;
-		Object.keys(process.env).forEach(function(key) {
-			self.storage[key] = process.env[key];
-		});
+  constructor() {
+    var self = this;
+    Object.keys(process.env).forEach(function(key) {
+      self.storage[key] = process.env[key];
+    });
 
-		// Set environment version (monotonic increasing counter, expecting exact match on server)
-		this.storage["CLIENT_VERSION"] = "3";
-	}
-	getItem(name) {
-		return this.storage[name];
-	}
-	setItem(name, value) {
-		this.storage[name] = value;
-	}
-	removeItem(name) {
-		delete this.storage[name];
-	}
-	get length() {
-		return Object.keys(this.storage).length;
-	}
-	key(index) {
-		return Object.keys(this.storage)[index];
-	}
+    // Set environment version (monotonic increasing counter, expecting exact match on server)
+    this.storage["CLIENT_VERSION"] = "3";
+  }
+  getItem(name) {
+    return this.storage[name];
+  }
+  setItem(name, value) {
+    this.storage[name] = value;
+  }
+  removeItem(name) {
+    delete this.storage[name];
+  }
+  get length() {
+    return Object.keys(this.storage).length;
+  }
+  key(index) {
+    return Object.keys(this.storage)[index];
+  }
 }
 
 // Extend the global scope with a few browser classes and methods
 require("./cp_globals.js");
 Object.assign(globalThis, {
-    localStorage: {},
-    sessionStorage: new SessionStorage(),
-    WebSocket: typeof WebSocket === "undefined" ? require("./lib_node/WebSocket") : WebSocket,
-    sha1: require("./lib/sha1"),
-    btoa: function(string) {
-        return Buffer.from(string, 'ascii').toString('base64');
-    },
-    atob: function(string) {
-        return Buffer.from(string, 'base64').toString('ascii');
-    }
+  localStorage: {},
+  sessionStorage: new SessionStorage(),
+  WebSocket: typeof WebSocket === "undefined" ? require("./lib_node/WebSocket") : WebSocket,
+  sha1: require("./lib/sha1"),
+  btoa: function(string) {
+    return Buffer.from(string, 'ascii').toString('base64');
+  },
+  atob: function(string) {
+    return Buffer.from(string, 'base64').toString('ascii');
+  }
 });
 
 // Load VM and the internal plugins
