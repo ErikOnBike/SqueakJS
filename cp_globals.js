@@ -47,27 +47,10 @@
   // Below follows the adapted "globals.js"
 
   // Create Squeak VM namespace
-  if(!globalThis.Squeak) {
-    globalThis.Squeak = {};
-  }
+  globalThis.Squeak = {};
 
-  // Setup a storage for settings
-  if(!Squeak.Settings) {
-    // Try (a working) localStorage and fall back to regular dictionary otherwise
-    var settings;
-    try {
-      // fails in restricted iframe
-      settings = globalThis.localStorage;
-      settings["squeak-foo:"] = "bar";
-      if(settings["squeak-foo:"] !== "bar") throw Error();
-      delete settings["squeak-foo:"];
-    } catch(e) {
-      settings = {};
-    }
-    Squeak.Settings = settings;
-  }
-
-  if(!Object.extend) {
+  // Create Object extend method
+  if (!Object.extend) {
     // Extend object by adding specified properties
     Object.extend = function(obj /* + more args */ ) {
       // skip arg 0, copy properties of other args to obj
