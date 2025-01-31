@@ -48,27 +48,10 @@
     // Below follows the adapted "globals.js"
 
     // Create Squeak VM namespace
-    if(!globalThis.Squeak) {
-      globalThis.Squeak = {};
-    }
+    globalThis.Squeak = {};
 
-    // Setup a storage for settings
-    if(!Squeak.Settings) {
-      // Try (a working) localStorage and fall back to regular dictionary otherwise
-      var settings;
-      try {
-        // fails in restricted iframe
-        settings = globalThis.localStorage;
-        settings["squeak-foo:"] = "bar";
-        if(settings["squeak-foo:"] !== "bar") throw Error();
-        delete settings["squeak-foo:"];
-      } catch(e) {
-        settings = {};
-      }
-      Squeak.Settings = settings;
-    }
-
-    if(!Object.extend) {
+    // Create Object extend method
+    if (!Object.extend) {
       // Extend object by adding specified properties
       Object.extend = function(obj /* + more args */ ) {
         // skip arg 0, copy properties of other args to obj
@@ -143,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250130",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250131",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -8627,7 +8610,7 @@
               case 0x0: // at:
                   this.needsVar['stack'] = true;
                   this.source.push(
-                      "var a, b; if ((a=stack[vm.sp-1]).sqClass === vm.specialObjects[7] && typeof (b=stack[vm.sp]) === 'number' && b>0 && b<=a.pointers.length) {\n",
+                      "var a, b; if ((a=stack[vm.sp-1]).sqClass === vm.specialObjects[7] && a.pointers && typeof (b=stack[vm.sp]) === 'number' && b>0 && b<=a.pointers.length) {\n",
                       "  stack[--vm.sp] = a.pointers[b-1];",
                       "} else { var c = vm.primHandler.objectAt(true,true,false); if (vm.primHandler.success) stack[--vm.sp] = c; else {\n",
                       "  vm.pc = ", this.pc, "; vm.sendSpecial(16); if (context !== vm.activeContext || vm.breakOutOfInterpreter !== false) return; }}\n");
@@ -8636,7 +8619,7 @@
               case 0x1: // at:put:
                   this.needsVar['stack'] = true;
                   this.source.push(
-                      "var a, b; if ((a=stack[vm.sp-2]).sqClass === vm.specialObjects[7] && typeof (b=stack[vm.sp-1]) === 'number' && b>0 && b<=a.pointers.length) {\n",
+                      "var a, b; if ((a=stack[vm.sp-2]).sqClass === vm.specialObjects[7] && a.pointers && typeof (b=stack[vm.sp-1]) === 'number' && b>0 && b<=a.pointers.length) {\n",
                       "  var c = stack[vm.sp]; stack[vm.sp-=2] = a.pointers[b-1] = c; a.dirty = true;",
                       "} else { vm.primHandler.objectAtPut(true,true,false); if (vm.primHandler.success) stack[vm.sp-=2] = c; else {\n",
                       "  vm.pc = ", this.pc, "; vm.sendSpecial(17); if (context !== vm.activeContext || vm.breakOutOfInterpreter !== false) return; }}\n");
@@ -14237,6 +14220,11 @@
 
   // This is a minimal headless SqueakJS-based VM for CodeParadise.
 
+
+  // Add a global unhandled exception handler (only store the uncaught exception)
+  window.addEventListener("unhandledrejection", function(event) {
+    globalThis.__cp_ue = { reason: event.reason, promise: event.promise };
+  });
 
   // Extend Squeak with settings and options to fetch and run image
   Object.extend(Squeak, {

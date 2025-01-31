@@ -72,27 +72,10 @@ function requireCp_globals () {
 	  // Below follows the adapted "globals.js"
 
 	  // Create Squeak VM namespace
-	  if(!globalThis.Squeak) {
-	    globalThis.Squeak = {};
-	  }
+	  globalThis.Squeak = {};
 
-	  // Setup a storage for settings
-	  if(!Squeak.Settings) {
-	    // Try (a working) localStorage and fall back to regular dictionary otherwise
-	    var settings;
-	    try {
-	      // fails in restricted iframe
-	      settings = globalThis.localStorage;
-	      settings["squeak-foo:"] = "bar";
-	      if(settings["squeak-foo:"] !== "bar") throw Error();
-	      delete settings["squeak-foo:"];
-	    } catch(e) {
-	      settings = {};
-	    }
-	    Squeak.Settings = settings;
-	  }
-
-	  if(!Object.extend) {
+	  // Create Object extend method
+	  if (!Object.extend) {
 	    // Extend object by adding specified properties
 	    Object.extend = function(obj /* + more args */ ) {
 	      // skip arg 0, copy properties of other args to obj
@@ -2991,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.3",
 	    vmDate: "2024-09-28",               // Maybe replace at build time?
-	    vmBuild: "cp-20250130",                 // or replace at runtime by last-modified?
+	    vmBuild: "cp-20250131",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -11565,7 +11548,7 @@ function requireJit () {
 	            case 0x0: // at:
 	                this.needsVar['stack'] = true;
 	                this.source.push(
-	                    "var a, b; if ((a=stack[vm.sp-1]).sqClass === vm.specialObjects[7] && typeof (b=stack[vm.sp]) === 'number' && b>0 && b<=a.pointers.length) {\n",
+	                    "var a, b; if ((a=stack[vm.sp-1]).sqClass === vm.specialObjects[7] && a.pointers && typeof (b=stack[vm.sp]) === 'number' && b>0 && b<=a.pointers.length) {\n",
 	                    "  stack[--vm.sp] = a.pointers[b-1];",
 	                    "} else { var c = vm.primHandler.objectAt(true,true,false); if (vm.primHandler.success) stack[--vm.sp] = c; else {\n",
 	                    "  vm.pc = ", this.pc, "; vm.sendSpecial(16); if (context !== vm.activeContext || vm.breakOutOfInterpreter !== false) return; }}\n");
@@ -11574,7 +11557,7 @@ function requireJit () {
 	            case 0x1: // at:put:
 	                this.needsVar['stack'] = true;
 	                this.source.push(
-	                    "var a, b; if ((a=stack[vm.sp-2]).sqClass === vm.specialObjects[7] && typeof (b=stack[vm.sp-1]) === 'number' && b>0 && b<=a.pointers.length) {\n",
+	                    "var a, b; if ((a=stack[vm.sp-2]).sqClass === vm.specialObjects[7] && a.pointers && typeof (b=stack[vm.sp-1]) === 'number' && b>0 && b<=a.pointers.length) {\n",
 	                    "  var c = stack[vm.sp]; stack[vm.sp-=2] = a.pointers[b-1] = c; a.dirty = true;",
 	                    "} else { vm.primHandler.objectAtPut(true,true,false); if (vm.primHandler.success) stack[vm.sp-=2] = c; else {\n",
 	                    "  vm.pc = ", this.pc, "; vm.sendSpecial(17); if (context !== vm.activeContext || vm.breakOutOfInterpreter !== false) return; }}\n");
@@ -16396,60 +16379,68 @@ var fs = require$$0$3;
 var process$1 = require$$2$1;
 var path = require$$1$1;
 
+// Add a global unhandled exception handler (only store the uncaught exception)
+process$1.on("uncaughtException", function(error) {
+  globalThis.__cp_ue = { error: error };
+});
+process$1.on("unhandledRejection", function(reason, promise) {
+  globalThis.__cp_ue = { reason: reason, promise: promise };
+});
+
 // Retrieve image name and parameters from command line
 var processArgs = process$1.argv.slice(2);
 var fullName = processArgs[0];
-if (!fullName) {
-    console.error("No image name specified.");
-    console.log("Usage (simplified): " + path.basename(process$1.argv0) + path.basename(process$1.argv[1]) + " <image filename>");
-    process$1.exit(1);
+if(!fullName) {
+  console.error("No image name specified.");
+  console.log("Usage (simplified): " + path.basename(process$1.argv0) + path.basename(process$1.argv[1]) + " <image filename>");
+  process$1.exit(1);
 }
 var root = path.dirname(fullName) + path.sep;
 var imageName = path.basename(fullName, ".image");
 
 // Add a sessionStorage class
 class SessionStorage {
-	storage = {}
+  storage = {}
 
-	constructor() {
-		var self = this;
-		Object.keys(process$1.env).forEach(function(key) {
-			self.storage[key] = process$1.env[key];
-		});
+  constructor() {
+    var self = this;
+    Object.keys(process$1.env).forEach(function(key) {
+      self.storage[key] = process$1.env[key];
+    });
 
-		// Set environment version (monotonic increasing counter, expecting exact match on server)
-		this.storage["CLIENT_VERSION"] = "3";
-	}
-	getItem(name) {
-		return this.storage[name];
-	}
-	setItem(name, value) {
-		this.storage[name] = value;
-	}
-	removeItem(name) {
-		delete this.storage[name];
-	}
-	get length() {
-		return Object.keys(this.storage).length;
-	}
-	key(index) {
-		return Object.keys(this.storage)[index];
-	}
+    // Set environment version (monotonic increasing counter, expecting exact match on server)
+    this.storage["CLIENT_VERSION"] = "3";
+  }
+  getItem(name) {
+    return this.storage[name];
+  }
+  setItem(name, value) {
+    this.storage[name] = value;
+  }
+  removeItem(name) {
+    delete this.storage[name];
+  }
+  get length() {
+    return Object.keys(this.storage).length;
+  }
+  key(index) {
+    return Object.keys(this.storage)[index];
+  }
 }
 
 // Extend the global scope with a few browser classes and methods
 requireCp_globals();
 Object.assign(globalThis, {
-    localStorage: {},
-    sessionStorage: new SessionStorage(),
-    WebSocket: typeof WebSocket === "undefined" ? requireWebSocket() : WebSocket,
-    sha1: requireSha1(),
-    btoa: function(string) {
-        return Buffer.from(string, 'ascii').toString('base64');
-    },
-    atob: function(string) {
-        return Buffer.from(string, 'base64').toString('ascii');
-    }
+  localStorage: {},
+  sessionStorage: new SessionStorage(),
+  WebSocket: typeof WebSocket === "undefined" ? requireWebSocket() : WebSocket,
+  sha1: requireSha1(),
+  btoa: function(string) {
+    return Buffer.from(string, 'ascii').toString('base64');
+  },
+  atob: function(string) {
+    return Buffer.from(string, 'base64').toString('ascii');
+  }
 });
 
 // Load VM and the internal plugins
