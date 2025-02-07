@@ -1232,6 +1232,80 @@ function CpSystemPlugin() {
       return this.answerSelf(argCount);
     },
 
+    // JavaScriptPromise instance methods
+    "primitiveJavaScriptPromiseThen:onRejected:": function(argCount) {
+      if(argCount !== 2) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var fullfilledBlock = this.interpreterProxy.stackValue(1);
+      var rejectBlock = this.interpreterProxy.stackValue(0);
+      var promise = receiver.jsObj;
+      var result = promise.then(this.asJavaScriptObject(fullfilledBlock), this.asJavaScriptObject(rejectBlock));
+      this.promiseAttachSenderMethod(result, receiver);
+      return this.answer(argCount, result);
+    },
+    "primitiveJavaScriptPromiseCatch:": function(argCount) {
+      if(argCount !== 2) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var catchBlock = this.interpreterProxy.stackValue(0);
+      var promise = receiver.jsObj;
+      var result = promise.catch(this.asJavaScriptObject(catchBlock));
+      this.promiseAttachSenderMethod(result, receiver);
+      return this.answer(argCount, result);
+    },
+    "primitiveJavaScriptPromiseFinally:": function(argCount) {
+      if(argCount !== 2) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var finallyBlock = this.interpreterProxy.stackValue(0);
+      var promise = receiver.jsObj;
+      var result = promise.finally(this.asJavaScriptObject(finallyBlock));
+      this.promiseAttachSenderMethod(result, receiver);
+      return this.answer(argCount, result);
+    },
+    promiseAttachSenderMethod: function(promise, smalltalkPromise) {
+      var promiseClass = smalltalkPromise.sqClass;
+      var origPromise = smalltalkPromise.jsObj;
+      var sender = this.vm.activeContext;
+      var method;
+      do {
+        // Try next sender
+        sender = sender.pointers[Squeak.Context_sender];
+        if(!sender || sender.isNil) {
+          if(origPromise.__cp_compiled_code) {
+            // Use the originating Promise's sender
+            promise.__cp_compiled_code = origPromise.__cp_compiled_code;
+          }
+          return;
+        }
+
+        // Extract method
+        method = sender.pointers[Squeak.Context_method];
+        if(!method || method.isNil || !method.methodClassForSuper) {
+          if(origPromise.__cp_compiled_code) {
+            // Use the originating Promise's sender
+            promise.__cp_compiled_code = origPromise.__cp_compiled_code;
+          }
+          return;
+        }
+      } while(method.methodClassForSuper() === promiseClass);
+
+      // Since method can also be a CompiledBlock, store it as 'compiled_code'
+      promise.__cp_compiled_code = method;
+    },
+
+    // JavaScriptError class methods
+    "primitiveJavaScriptErrorUncaughtObject": function(argCount) {
+      if(argCount !== 0) return false;
+      var uncaught = globalThis.__cp_uncaught;
+      delete globalThis.__cp_uncaught;
+      return this.answer(argCount, uncaught);
+    },
+    "primitiveJavaScriptErrorRegisterUncaughtInstanceContext:": function(argCount) {
+      if(argCount !== 1) return false;
+      // Store the uncaught instance context in the VM
+      this.vm.uncaughtInstanceContext = this.interpreterProxy.stackValue(0);
+      return this.answerSelf(argCount);
+    },
+
     // ClientEnvironment instance methods
     "primitiveEnvironmentVariableAt:": function(argCount) {
       if(argCount !== 1) return false;
@@ -1458,6 +1532,26 @@ Object.extend(Squeak.Interpreter.prototype,
       // CodeParadise image. Marking a Process as the 'idle' Process will replace
       // a previously marked Process. Use Process >> #beIdleProcess to mark it.
       return this.idleProcess === this.activeProcess();
+    },
+    handleUncaught: function() {
+      if(!this.uncaughtInstanceContext) {
+        return;
+      }
+
+      // Create a copy of the uncaught instance context and set its sender to
+      // the activeContext, hereby making it behave as if send from that context.
+      // This means handleUncaught() should be called as soon as an uncaught
+      // Exception or unhandled Rejection is detected (see cp_interpreter.js).
+      // Otherwise the activeContext might have changed.
+      var context = this.image.clone(this.uncaughtInstanceContext);
+      context.pointers[Squeak.Context_sender] = this.activeContext;
+
+      // Create a new synchronous Process for the copied context and run it.
+      var process = Squeak.externalModules.CpSystemPlugin.newProcessForContext(context);
+      process.run();
+
+      // Restart regular interpreter loop
+      this.runInterpreter(true);
     }
   }
 );

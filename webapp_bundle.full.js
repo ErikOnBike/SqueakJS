@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250131",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250207",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -12659,6 +12659,80 @@
         return this.answerSelf(argCount);
       },
 
+      // JavaScriptPromise instance methods
+      "primitiveJavaScriptPromiseThen:onRejected:": function(argCount) {
+        if(argCount !== 2) return false;
+        var receiver = this.interpreterProxy.stackValue(argCount);
+        var fullfilledBlock = this.interpreterProxy.stackValue(1);
+        var rejectBlock = this.interpreterProxy.stackValue(0);
+        var promise = receiver.jsObj;
+        var result = promise.then(this.asJavaScriptObject(fullfilledBlock), this.asJavaScriptObject(rejectBlock));
+        this.promiseAttachSenderMethod(result, receiver);
+        return this.answer(argCount, result);
+      },
+      "primitiveJavaScriptPromiseCatch:": function(argCount) {
+        if(argCount !== 2) return false;
+        var receiver = this.interpreterProxy.stackValue(argCount);
+        var catchBlock = this.interpreterProxy.stackValue(0);
+        var promise = receiver.jsObj;
+        var result = promise.catch(this.asJavaScriptObject(catchBlock));
+        this.promiseAttachSenderMethod(result, receiver);
+        return this.answer(argCount, result);
+      },
+      "primitiveJavaScriptPromiseFinally:": function(argCount) {
+        if(argCount !== 2) return false;
+        var receiver = this.interpreterProxy.stackValue(argCount);
+        var finallyBlock = this.interpreterProxy.stackValue(0);
+        var promise = receiver.jsObj;
+        var result = promise.finally(this.asJavaScriptObject(finallyBlock));
+        this.promiseAttachSenderMethod(result, receiver);
+        return this.answer(argCount, result);
+      },
+      promiseAttachSenderMethod: function(promise, smalltalkPromise) {
+        var promiseClass = smalltalkPromise.sqClass;
+        var origPromise = smalltalkPromise.jsObj;
+        var sender = this.vm.activeContext;
+        var method;
+        do {
+          // Try next sender
+          sender = sender.pointers[Squeak.Context_sender];
+          if(!sender || sender.isNil) {
+            if(origPromise.__cp_compiled_code) {
+              // Use the originating Promise's sender
+              promise.__cp_compiled_code = origPromise.__cp_compiled_code;
+            }
+            return;
+          }
+
+          // Extract method
+          method = sender.pointers[Squeak.Context_method];
+          if(!method || method.isNil || !method.methodClassForSuper) {
+            if(origPromise.__cp_compiled_code) {
+              // Use the originating Promise's sender
+              promise.__cp_compiled_code = origPromise.__cp_compiled_code;
+            }
+            return;
+          }
+        } while(method.methodClassForSuper() === promiseClass);
+
+        // Since method can also be a CompiledBlock, store it as 'compiled_code'
+        promise.__cp_compiled_code = method;
+      },
+
+      // JavaScriptError class methods
+      "primitiveJavaScriptErrorUncaughtObject": function(argCount) {
+        if(argCount !== 0) return false;
+        var uncaught = globalThis.__cp_uncaught;
+        delete globalThis.__cp_uncaught;
+        return this.answer(argCount, uncaught);
+      },
+      "primitiveJavaScriptErrorRegisterUncaughtInstanceContext:": function(argCount) {
+        if(argCount !== 1) return false;
+        // Store the uncaught instance context in the VM
+        this.vm.uncaughtInstanceContext = this.interpreterProxy.stackValue(0);
+        return this.answerSelf(argCount);
+      },
+
       // ClientEnvironment instance methods
       "primitiveEnvironmentVariableAt:": function(argCount) {
         if(argCount !== 1) return false;
@@ -12885,6 +12959,26 @@
         // CodeParadise image. Marking a Process as the 'idle' Process will replace
         // a previously marked Process. Use Process >> #beIdleProcess to mark it.
         return this.idleProcess === this.activeProcess();
+      },
+      handleUncaught: function() {
+        if(!this.uncaughtInstanceContext) {
+          return;
+        }
+
+        // Create a copy of the uncaught instance context and set its sender to
+        // the activeContext, hereby making it behave as if send from that context.
+        // This means handleUncaught() should be called as soon as an uncaught
+        // Exception or unhandled Rejection is detected (see cp_interpreter.js).
+        // Otherwise the activeContext might have changed.
+        var context = this.image.clone(this.uncaughtInstanceContext);
+        context.pointers[Squeak.Context_sender] = this.activeContext;
+
+        // Create a new synchronous Process for the copied context and run it.
+        var process = Squeak.externalModules.CpSystemPlugin.newProcessForContext(context);
+        process.run();
+
+        // Restart regular interpreter loop
+        this.runInterpreter(true);
       }
     }
   );
@@ -14171,6 +14265,7 @@
               vm.interpreterIsRunning = true;
               var compiled;
               if(syncProcess) {
+
                 // Run the interpreter until another Process becomes the active one
                 do {
                   if(compiled = vm.method.compiled) {
@@ -14178,7 +14273,7 @@
                   } else {
                     vm.interpretOneSistaWithExtensions(false, 0, 0);
                   }
-                } while(syncProcess && syncProcess === vm.activeProcess());
+                } while(syncProcess === vm.activeProcess());
 
                 // Check if interpreter remains in a sync Process, in which case it
                 // should return immediately to allow the calling Process to continue.
@@ -14186,6 +14281,7 @@
                   return;
                 }
               } else {
+
                 // Run the interpreter for max duration or until becoming idle
                 var interpreterMaxTime = performance.now() + 50;
                 do {
@@ -14203,7 +14299,8 @@
                 vm.interpreterIsRunning = false;
               } else {
 
-                // Restart the interpreter shortly, but give environment some breathing space
+                // Restart the interpreter shortly, but give environment some breathing space.
+                // The is running flag remains up while sleeping.
                 vm.interpreterRestartTimeout = globalThis.setTimeout(vm.runInterpreter, 10);
               }
             } catch(e) {
@@ -14221,9 +14318,14 @@
   // This is a minimal headless SqueakJS-based VM for CodeParadise.
 
 
-  // Add a global unhandled exception handler (only store the uncaught exception)
+  // Add a global unhandled exception handler.
+  // Store the uncaught exception and start the Smalltalk uncaught handler.
   window.addEventListener("unhandledrejection", function(event) {
-    globalThis.__cp_ue = { reason: event.reason, promise: event.promise };
+    globalThis.__cp_uncaught = { reason: event.reason, promise: event.promise, compiledCode: event.promise.__cp_compiled_code };
+    Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+
+    // Don't show default message on the console
+    event.preventDefault();
   });
 
   // Extend Squeak with settings and options to fetch and run image

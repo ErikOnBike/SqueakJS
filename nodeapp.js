@@ -5,12 +5,15 @@ var fs = require("fs");
 var process = require("process");
 var path = require("path");
 
-// Add a global unhandled exception handler (only store the uncaught exception)
+// Add a global unhandled exception handler.
+// Store the uncaught exception and start the Smalltalk uncaught handler.
 process.on("uncaughtException", function(error) {
-  globalThis.__cp_ue = { error: error };
+  globalThis.__cp_uncaught = { error: error };
+  Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
 });
 process.on("unhandledRejection", function(reason, promise) {
-  globalThis.__cp_ue = { reason: reason, promise: promise };
+  globalThis.__cp_uncaught = { reason: reason, promise: promise, compiledCode: promise.__cp_compiled_code };
+  Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
 });
 
 // Retrieve image name and parameters from command line

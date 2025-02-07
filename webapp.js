@@ -23,9 +23,14 @@ import "./plugins/CpSystemPlugin.js";
 import "./plugins/CpDOMPlugin.js";
 import "./cp_interpreter.js";
 
-// Add a global unhandled exception handler (only store the uncaught exception)
+// Add a global unhandled exception handler.
+// Store the uncaught exception and start the Smalltalk uncaught handler.
 window.addEventListener("unhandledrejection", function(event) {
-  globalThis.__cp_ue = { reason: event.reason, promise: event.promise };
+  globalThis.__cp_uncaught = { reason: event.reason, promise: event.promise, compiledCode: event.promise.__cp_compiled_code };
+  Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+
+  // Don't show default message on the console
+  event.preventDefault();
 });
 
 // Extend Squeak with settings and options to fetch and run image

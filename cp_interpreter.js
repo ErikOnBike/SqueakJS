@@ -35,6 +35,7 @@ Object.extend(Squeak,
             vm.interpreterIsRunning = true;
             var compiled;
             if(syncProcess) {
+
               // Run the interpreter until another Process becomes the active one
               do {
                 if(compiled = vm.method.compiled) {
@@ -42,7 +43,7 @@ Object.extend(Squeak,
                 } else {
                   vm.interpretOneSistaWithExtensions(false, 0, 0);
                 }
-              } while(syncProcess && syncProcess === vm.activeProcess());
+              } while(syncProcess === vm.activeProcess());
 
               // Check if interpreter remains in a sync Process, in which case it
               // should return immediately to allow the calling Process to continue.
@@ -50,6 +51,7 @@ Object.extend(Squeak,
                 return;
               }
             } else {
+
               // Run the interpreter for max duration or until becoming idle
               var interpreterMaxTime = performance.now() + 50;
               do {
@@ -67,7 +69,8 @@ Object.extend(Squeak,
               vm.interpreterIsRunning = false;
             } else {
 
-              // Restart the interpreter shortly, but give environment some breathing space
+              // Restart the interpreter shortly, but give environment some breathing space.
+              // The is running flag remains up while sleeping.
               vm.interpreterRestartTimeout = globalThis.setTimeout(vm.runInterpreter, 10);
             }
           } catch(e) {
