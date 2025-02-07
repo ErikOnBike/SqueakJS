@@ -554,6 +554,11 @@ function CpSystemPlugin() {
       var receiver = this.interpreterProxy.stackValue(argCount);
       return this.answer(argCount, !!receiver.isSync);
     },
+    "primitiveProcessAllowAwaitPromise": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      return this.answer(argCount, !receiver.failOnAwait);
+    },
 
     // Symbol class methods
     symbolFromString: function(string) {
@@ -1244,7 +1249,7 @@ function CpSystemPlugin() {
       return this.answer(argCount, result);
     },
     "primitiveJavaScriptPromiseCatch:": function(argCount) {
-      if(argCount !== 2) return false;
+      if(argCount !== 1) return false;
       var receiver = this.interpreterProxy.stackValue(argCount);
       var catchBlock = this.interpreterProxy.stackValue(0);
       var promise = receiver.jsObj;
@@ -1253,7 +1258,7 @@ function CpSystemPlugin() {
       return this.answer(argCount, result);
     },
     "primitiveJavaScriptPromiseFinally:": function(argCount) {
-      if(argCount !== 2) return false;
+      if(argCount !== 1) return false;
       var receiver = this.interpreterProxy.stackValue(argCount);
       var finallyBlock = this.interpreterProxy.stackValue(0);
       var promise = receiver.jsObj;

@@ -958,6 +958,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       this.eventHandlerProcess = this.interpreterProxy.stackValue(0);
       this.systemPlugin.makeProcessSynchronous(this.eventHandlerProcess);
+      this.eventHandlerProcess.failOnAwait = true;
       return this.answerSelf(argCount);
     },
     "primitiveEventRegisterClass:forType:": function(argCount) {
@@ -1184,6 +1185,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       this.transitionProcess = this.interpreterProxy.stackValue(0);
       this.systemPlugin.makeProcessSynchronous(this.transitionProcess);
+      this.transitionProcess.failOnAwait = true;
       return this.answerSelf(argCount);
     },
     "primitiveTransitionHasTransitions:": function(argCount) {

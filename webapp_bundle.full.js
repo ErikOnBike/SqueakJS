@@ -11981,6 +11981,11 @@
         var receiver = this.interpreterProxy.stackValue(argCount);
         return this.answer(argCount, !!receiver.isSync);
       },
+      "primitiveProcessAllowAwaitPromise": function(argCount) {
+        if(argCount !== 0) return false;
+        var receiver = this.interpreterProxy.stackValue(argCount);
+        return this.answer(argCount, !receiver.failOnAwait);
+      },
 
       // Symbol class methods
       symbolFromString: function(string) {
@@ -12671,7 +12676,7 @@
         return this.answer(argCount, result);
       },
       "primitiveJavaScriptPromiseCatch:": function(argCount) {
-        if(argCount !== 2) return false;
+        if(argCount !== 1) return false;
         var receiver = this.interpreterProxy.stackValue(argCount);
         var catchBlock = this.interpreterProxy.stackValue(0);
         var promise = receiver.jsObj;
@@ -12680,7 +12685,7 @@
         return this.answer(argCount, result);
       },
       "primitiveJavaScriptPromiseFinally:": function(argCount) {
-        if(argCount !== 2) return false;
+        if(argCount !== 1) return false;
         var receiver = this.interpreterProxy.stackValue(argCount);
         var finallyBlock = this.interpreterProxy.stackValue(0);
         var promise = receiver.jsObj;
@@ -13973,6 +13978,7 @@
         if(argCount !== 1) return false;
         this.eventHandlerProcess = this.interpreterProxy.stackValue(0);
         this.systemPlugin.makeProcessSynchronous(this.eventHandlerProcess);
+        this.eventHandlerProcess.failOnAwait = true;
         return this.answerSelf(argCount);
       },
       "primitiveEventRegisterClass:forType:": function(argCount) {
@@ -14199,6 +14205,7 @@
         if(argCount !== 1) return false;
         this.transitionProcess = this.interpreterProxy.stackValue(0);
         this.systemPlugin.makeProcessSynchronous(this.transitionProcess);
+        this.transitionProcess.failOnAwait = true;
         return this.answerSelf(argCount);
       },
       "primitiveTransitionHasTransitions:": function(argCount) {
