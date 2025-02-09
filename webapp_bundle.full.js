@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250207",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250209",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -11914,6 +11914,9 @@
           // Run the process
           process.run();
 
+          // Make sure the interpreter is restarted (after this synchronous function has returned)
+          thisHandle.vm.deferRunInterpreter();
+
           // The result should have been stored by CpJavaScriptFunction >> #setResult:
           // Check if result is an error (recognized by cause, to allow functions to
           // answer Error instances as well as throw Errors). If an error, throw it.
@@ -14313,6 +14316,18 @@
             } catch(e) {
               console.error("Failure during Squeak run: ", e);
             }
+          };
+          vm.deferRunInterpreter = function() {
+
+            // Remove any pending timeout
+            if(vm.interpreterRestartTimeout) {
+              globalThis.clearTimeout(vm.interpreterRestartTimeout);
+            }
+
+            // Start the interpreter on the next tick
+            vm.interpreterRestartTimeout = globalThis.setTimeout(function() {
+              vm.runInterpreter(true);
+            }, 0);
           };
 
           // Start the interpreter

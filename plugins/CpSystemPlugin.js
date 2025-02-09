@@ -487,6 +487,9 @@ function CpSystemPlugin() {
         // Run the process
         process.run();
 
+        // Make sure the interpreter is restarted (after this synchronous function has returned)
+        thisHandle.vm.deferRunInterpreter();
+
         // The result should have been stored by CpJavaScriptFunction >> #setResult:
         // Check if result is an error (recognized by cause, to allow functions to
         // answer Error instances as well as throw Errors). If an error, throw it.

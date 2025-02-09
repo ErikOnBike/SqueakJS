@@ -77,6 +77,18 @@ Object.extend(Squeak,
             console.error("Failure during Squeak run: ", e);
           }
         };
+        vm.deferRunInterpreter = function() {
+
+          // Remove any pending timeout
+          if(vm.interpreterRestartTimeout) {
+            globalThis.clearTimeout(vm.interpreterRestartTimeout);
+          }
+
+          // Start the interpreter on the next tick
+          vm.interpreterRestartTimeout = globalThis.setTimeout(function() {
+            vm.runInterpreter(true);
+          }, 0);
+        };
 
         // Start the interpreter
         vm.runInterpreter();
