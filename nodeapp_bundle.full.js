@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.3",
 	    vmDate: "2024-09-28",               // Maybe replace at build time?
-	    vmBuild: "cp-20250209",                 // or replace at runtime by last-modified?
+	    vmBuild: "cp-20250211",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -15275,9 +15275,20 @@ function requireCpSystemPlugin () {
 	        thisHandle.vm.deferRunInterpreter();
 
 	        // The result should have been stored by CpJavaScriptFunction >> #setResult:
+	        // If no result is supplied yet, we're probably handling a Promise >> #await.
 	        // Check if result is an error (recognized by cause, to allow functions to
 	        // answer Error instances as well as throw Errors). If an error, throw it.
 	        var result = func.__cp_func_result;
+	        if(result === undefined) {
+	          // Add a Promise to be fulfilled later as the 'temporary' result (see "primitiveJavaScriptFunctionSetResult:")
+	          var resolve, reject;
+	          result = func.__cp_func_result = new Promise(function(localResolve, localReject) {
+	            resolve = localResolve;
+	            reject = localReject;
+	          });
+	          func.__cp_func_result.__cp_resolve = resolve;
+	          func.__cp_func_result.__cp_reject = reject;
+	        }
 	        var isError = result instanceof Error && result.cause && result.cause.sqClass;
 
 	        // Throw in case of error
@@ -16019,8 +16030,16 @@ function requireCpSystemPlugin () {
 	      if(!jsFunc) return false;
 	      var result = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
 
-	      // Store the result in the Context instance
-	      jsFunc.__cp_func_result = result;
+	      // Store the result in the Context instance or fulfill the waiting result
+	      if(jsFunc.__cp_func_result && jsFunc.__cp_func_result.__cp_resolve) {
+	        if(result instanceof Error && result.cause && result.cause.sqClass) {
+	          jsFunc.__cp_func_result.__cp_reject(result);
+	        } else {
+	          jsFunc.__cp_func_result.__cp_resolve(result);
+	        }
+	      } else {
+	        jsFunc.__cp_func_result = result;
+	      }
 	      return this.answerSelf(argCount);
 	    },
 
