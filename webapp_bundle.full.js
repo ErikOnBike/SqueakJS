@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250211",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250219",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -14280,9 +14280,13 @@
 
             // If restarting while in timeout waiting, skip waiting
             if(restart && vm.interpreterRestartTimeout) {
-              globalThis.clearTimeout(vm.interpreterRestartTimeout);
+              if(vm.interpreterRestartTimeout !== 'defer') {
+                globalThis.clearTimeout(vm.interpreterRestartTimeout);
+                vm.interpreterRestartTimeout = 'defer';
+              }
+            } else {
+              vm.interpreterRestartTimeout = null;
             }
-            vm.interpreterRestartTimeout = null;
 
             try {
               // Keep track of active Process if it should run synchronously
@@ -14324,8 +14328,9 @@
 
               // Stop execution if the idle Process is reached, meaning nothing left to execute.
               // New events might awaken an existing Process. The interpreter will be restarted then.
-              if(vm.inIdleProcess()) {
+              if(vm.interpreterRestartTimeout !== 'defer' && vm.inIdleProcess()) {
                 vm.interpreterIsRunning = false;
+                vm.interpreterRestartTimeout = null;
               } else {
 
                 // Restart the interpreter shortly, but give environment some breathing space.
@@ -14337,14 +14342,22 @@
             }
           };
           vm.deferRunInterpreter = function() {
+            // If we already have defer, keep it and just start new run (after 0 delay)
+            if(vm.interpreterRestartTimeout === 'defer') {
+              globalThis.setTimeout(function() {
+                vm.runInterpreter(true);
+              }, 0);
+              return;
+            }
 
-            // Remove any pending timeout
+            // Remove any pending 'regular' timeout
             if(vm.interpreterRestartTimeout) {
               globalThis.clearTimeout(vm.interpreterRestartTimeout);
+              vm.interpreterRestartTimeout = null;
             }
 
             // Start the interpreter on the next tick
-            vm.interpreterRestartTimeout = globalThis.setTimeout(function() {
+            globalThis.setTimeout(function() {
               vm.runInterpreter(true);
             }, 0);
           };
