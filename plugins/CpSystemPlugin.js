@@ -297,7 +297,7 @@ function CpSystemPlugin() {
         return stObj;
       }
 
-      // Create OrederedDictionary and add it to seen collection directly, to allow internal references to be mapped correctly
+      // Create OrderedDictionary and add it to seen collection directly, to allow internal references to be mapped correctly
       var orderedDictionary = this.vm.instantiateClass(this.orderedDictionaryClass, 0);
       seen.push({ jsObj: obj, stObj: orderedDictionary });
 
