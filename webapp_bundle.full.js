@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250219",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250226",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -11724,7 +11724,7 @@
           return stObj;
         }
 
-        // Create OrederedDictionary and add it to seen collection directly, to allow internal references to be mapped correctly
+        // Create OrderedDictionary and add it to seen collection directly, to allow internal references to be mapped correctly
         var orderedDictionary = this.vm.instantiateClass(this.orderedDictionaryClass, 0);
         seen.push({ jsObj: obj, stObj: orderedDictionary });
 
