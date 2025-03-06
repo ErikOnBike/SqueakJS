@@ -1230,7 +1230,7 @@ function CpSystemPlugin() {
     "primitiveJavaScriptFunctionSetBlock:": function(argCount) {
       if(argCount !== 1) return false;
       var receiver = this.interpreterProxy.stackValue(argCount);
-      var block = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+      var block = this.interpreterProxy.stackValue(0);
       receiver.__cp_block = block;
       return this.answerSelf(argCount);
     },

@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.3",
 	    vmDate: "2024-09-28",               // Maybe replace at build time?
-	    vmBuild: "cp-20250226",                 // or replace at runtime by last-modified?
+	    vmBuild: "cp-20250306",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -16014,7 +16014,7 @@ function requireCpSystemPlugin () {
 	    "primitiveJavaScriptFunctionSetBlock:": function(argCount) {
 	      if(argCount !== 1) return false;
 	      var receiver = this.interpreterProxy.stackValue(argCount);
-	      var block = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+	      var block = this.interpreterProxy.stackValue(0);
 	      receiver.__cp_block = block;
 	      return this.answerSelf(argCount);
 	    },
