@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.3",
 	    vmDate: "2024-09-28",               // Maybe replace at build time?
-	    vmBuild: "cp-20250306",                 // or replace at runtime by last-modified?
+	    vmBuild: "cp-20250317",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -16561,7 +16561,7 @@ class SessionStorage {
     });
 
     // Set environment version (monotonic increasing counter, expecting exact match on server)
-    this.storage["CLIENT_VERSION"] = "4";
+    this.storage["CLIENT_VERSION"] = "5";
   }
   getItem(name) {
     return this.storage[name];
