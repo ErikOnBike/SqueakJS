@@ -57,6 +57,13 @@ function CpDOMPlugin() {
           if(obj.querySelectorAll) {
             return thisHandle.instanceForElement(obj);
           }
+          // Check for DOM event
+          if(obj.bubbles !== undefined && obj.currentTarget) {
+            let eventClass = (thisHandle.eventClassMap[obj.type] || thisHandle.eventClassMap[""]);
+            let newEvent = thisHandle.vm.instantiateClass(eventClass, 0);
+            newEvent.event = obj;
+            return newEvent;
+          }
         }
         return thisHandle.originalMakeStObject.call(this, obj, proxyClass, seen);
       };

@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250306",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250321",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -13098,6 +13098,13 @@
             // Check for DOM element (it will use own internal wrapping, do not use 'seen' here)
             if(obj.querySelectorAll) {
               return thisHandle.instanceForElement(obj);
+            }
+            // Check for DOM event
+            if(obj.bubbles !== undefined && obj.currentTarget) {
+              let eventClass = (thisHandle.eventClassMap[obj.type] || thisHandle.eventClassMap[""]);
+              let newEvent = thisHandle.vm.instantiateClass(eventClass, 0);
+              newEvent.event = obj;
+              return newEvent;
             }
           }
           return thisHandle.originalMakeStObject.call(this, obj, proxyClass, seen);
