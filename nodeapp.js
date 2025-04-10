@@ -38,7 +38,7 @@ class SessionStorage {
     });
 
     // Set environment version (monotonic increasing counter, expecting exact match on server)
-    this.storage["CLIENT_VERSION"] = "5";
+    this.storage["CLIENT_VERSION"] = "6";
   }
   getItem(name) {
     return this.storage[name];
