@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.3",
 	    vmDate: "2024-09-28",               // Maybe replace at build time?
-	    vmBuild: "cp-20250317",                 // or replace at runtime by last-modified?
+	    vmBuild: "cp-20250410",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -15318,6 +15318,16 @@ function requireCpSystemPlugin () {
 	        value += bytes[i] * f;
 	      }
 	      return value;
+	    },
+
+	    // Perform Smalltalk code from JavaScript
+	    smalltalkPerform: function(instance, selector, args) {
+	      if(Function.smalltalkPerformer === undefined) {
+	        console.warn("No Smalltalk performer installed yet!");
+	        console.log("When trying to perform:", arguments);
+	        return;
+	      }
+	      Function.smalltalkPerformer(instance, selector.sqClass ? selector : this.symbolFromString(selector.toString()), args === undefined || args === null ? [] : args);
 	    },
 
 	    // Object instance methods

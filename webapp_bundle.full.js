@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250321",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250410",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -11963,6 +11963,16 @@
         return value;
       },
 
+      // Perform Smalltalk code from JavaScript
+      smalltalkPerform: function(instance, selector, args) {
+        if(Function.smalltalkPerformer === undefined) {
+          console.warn("No Smalltalk performer installed yet!");
+          console.log("When trying to perform:", arguments);
+          return;
+        }
+        Function.smalltalkPerformer(instance, selector.sqClass ? selector : this.symbolFromString(selector.toString()), args === undefined || args === null ? [] : args);
+      },
+
       // Object instance methods
       "primitiveObjectTraceCr:": function(argCount) {
         if(argCount !== 1) return false;
@@ -13054,6 +13064,7 @@
       eventsReceived: [],
       throttleEventTypes: [ "pointermove", "touchmove", "wheel", "gesturechange" ],
       transitionStartTick: performance.now(),
+      elementsToInitialize: [],
       namespaces: [
         // Default namespaces (for attributes, therefore without elementClass)
         { prefix: "xlink", uri: "http://www.w3.org/1999/xlink", elementClass: null },
@@ -13152,6 +13163,23 @@
         ;
       },
 
+      // Helper method to initialize TemplateComponents correctly
+      initializePendingElements: function() {
+        if(!this.initializeRunner) {
+          return;
+        }
+
+        // Extract and reset pending elements and runner
+        window.clearTimeout(this.initializeRunner);
+        var elements = this.elementsToInitialize;
+        this.elementsToInitialize = [];
+        this.initializeRunner = null;
+        var thisHandle = this;
+        elements.forEach(function(element) {
+          thisHandle.systemPlugin.smalltalkPerform(thisHandle.instanceForElement(element), "initialize");
+        });
+      },
+
       // Point helper methods
       getPointX: function(stPoint) {
         return stPoint.pointers[0];
@@ -13244,17 +13272,26 @@
           tagName = tagName.slice(separatorIndex + 1);
         }
         var namespace = this.namespaceForPrefix(prefix);
-        var element = !namespace || prefix === "xhtml" ?
-          window.document.createElement(tagName) :
-          window.document.createElementNS(namespace.uri, tagName)
-        ;
-        var receiver = this.interpreterProxy.stackValue(argCount);
-        if(tagName === receiver.customTag) {
-          // Register if WebComponent is created from code (vs being created from markup content).
-          // This information is used in the WebComponent constructor to allow correct initialization
-          // of all WebComponents.
-          element.__cp_created_from_code = true;
+        var element;
+        if(!namespace || prefix === "xhtml") {
+          var customClass = window.customElements.get(tagName);
+          if(customClass) {
+            if(customClass.stClass) {
+              // Create without performing the initialize method (the code calling this method will do this)
+              element = new customClass(true);
+            } else {
+              element = new customClass();
+            }
+          } else {
+            element = window.document.createElement(tagName);
+          }
+        } else {
+          element = window.document.createElementNS(namespace.uri, tagName);
         }
+
+        // Ensure all nested WebComponents are initialized
+        this.initializePendingElements();
+
         return this.answer(argCount, this.instanceForElement(element));
       },
       "primitiveDomElementDocument": function(argCount) {
@@ -13410,6 +13447,10 @@
         var domElement = this.interpreterProxy.stackValue(argCount).domElement;
         if(!domElement) return false;
         domElement.innerHTML = markupContent;
+
+        // Ensure any WebComponents created by the markup are initialized
+        this.initializePendingElements();
+
         return this.answerSelf(argCount);
       },
       "primitiveDomElementIsClassed:": function(argCount) {
@@ -13753,7 +13794,12 @@
         if(!domElement.shadowRoot) {
           var shadowRoot = domElement.attachShadow({ mode: "open" });
           if(elementClass.templateElement) {
+            // Adding the cloned nodes to the shadow DOM will (if the element itself is attached to
+            // the live DOM or because of the upgrade() in the WebComponent constructor) trigger the
+            // execution of the nested WebComponent constructors. So perform any pending initialization
+            // for these components.
             shadowRoot.appendChild(elementClass.templateElement.cloneNode(true));
+            this.initializePendingElements();
           }
         }
       },
@@ -13771,32 +13817,33 @@
         var thisHandle = this;
         try {
           var customClass = class extends HTMLElement {
-            constructor() {
+            constructor(skipInitialize) {
               super();
               thisHandle.ensureShadowRoot(receiver, this);
 
-              // Since a WebComponent can be created both from code as well as from
-              // markup content, we need to inform the Smalltalk code of the later
-              // situation. In this way the Smalltalk #initialize message can be send
-              // to the new instance (in all situations).
-              // Use the fact that setTimeout will run code after current execution
-              // has finished. This means the regular instantiation code has finished
-              // (in the situation it was called from code).
-              var instance = this;
-              window.setTimeout(function() {
-                // If component is NOT created by code, dispatch event to allow Smalltalk
-                // code to do the initialization after all.
-                if(!instance.__cp_created_from_code) {
-                  var requestInitEvent = new CustomEvent("createdfrommarkup", { detail: thisHandle.instanceForElement(instance) });
-                  window.document.dispatchEvent(requestInitEvent);
+              // Upgrade the shadow DOM so all constructors are called for nested WebComponents.
+              // Doing this before the following initialization means, children are initialized
+              // before the parent. This seems logical because the nested elements can then be
+              // used from the parent (which defined its children, so expects them to be there).
+              window.customElements.upgrade(this.shadowRoot);
+
+              if(skipInitialize !== true) {
+                // Because WebComponents should not access their children during construction,
+                // add the new instance to the list of pending elements and perform initialization
+                // deferred (until the next tick).
+                thisHandle.elementsToInitialize.push(this);
+                if(!thisHandle.initializeRunner) {
+                  thisHandle.initializeRunner = window.setTimeout(function() {
+                    thisHandle.initializePendingElements();
+                  }, 0);
                 }
-              }, 0);
+              }
             }
           };
 
           // Keep track of custom class
           window.customElements.define(receiver.customTag, customClass);
-          customClass.sqClass = receiver;
+          customClass.stClass = receiver;
         } catch(e) {
           console.error("Failed to create new custom element with tag " + receiver.customTag, e);
           return false;
@@ -13862,8 +13909,12 @@
       },
       installTemplate: function(webComponentClass, template) {
 
-        // Create template node from specified template (String)
-        // The DOM parser is very forgiving, so no need for try/catch here
+        // Create template node from specified template (String).
+        // The DOM parser is very forgiving, so no need for try/catch here.
+        // Parsing will NOT result in calling the actual constructor of any
+        // nested WebComponents. Only when adding them to the live DOM or by
+        // calling the upgrade() in the parent WebComponent constructor
+        // explicitly, will the nested WebComponent constructors be called.
         var domParser = new DOMParser();
         var templateElement = domParser.parseFromString("<template>" + (template || "") + "</template>", "text/html").querySelector("template").content;
 
@@ -13929,8 +13980,13 @@
   	}
         }
 
-        // Set new content using a copy of the template to prevent changes (by others) to persist
+        // Set new content using a copy of the template to prevent changes (by others) to persist.
+        // Adding the cloned nodes to the shadow DOM will (if the element itself is attached to
+        // the live DOM or because of the upgrade() in the WebComponent constructor) trigger the
+        // execution of the nested WebComponent constructors. So perform any pending initialization
+        // for these components.
         shadowRoot.appendChild(templateElement.cloneNode(true));
+        this.initializePendingElements();
       },
       styleAllInstances: function(webComponentClass) {
         var templateElement = webComponentClass.templateElement;

@@ -536,6 +536,16 @@ function CpSystemPlugin() {
       return value;
     },
 
+    // Perform Smalltalk code from JavaScript
+    smalltalkPerform: function(instance, selector, args) {
+      if(Function.smalltalkPerformer === undefined) {
+        console.warn("No Smalltalk performer installed yet!");
+        console.log("When trying to perform:", arguments);
+        return;
+      }
+      Function.smalltalkPerformer(instance, selector.sqClass ? selector : this.symbolFromString(selector.toString()), args === undefined || args === null ? [] : args);
+    },
+
     // Object instance methods
     "primitiveObjectTraceCr:": function(argCount) {
       if(argCount !== 1) return false;
