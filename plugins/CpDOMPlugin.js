@@ -59,8 +59,8 @@ function CpDOMPlugin() {
             return thisHandle.instanceForElement(obj);
           }
           // Check for DOM event
-          if(obj.bubbles !== undefined && obj.currentTarget) {
-            let eventClass = (thisHandle.eventClassMap[obj.type] || thisHandle.eventClassMap[""]);
+          if(obj.bubbles !== undefined && obj.currentTarget && thisHandle.eventClassMap[obj.type]) {
+            let eventClass = thisHandle.eventClassMap[obj.type];
             let newEvent = thisHandle.vm.instantiateClass(eventClass, 0);
             newEvent.event = obj;
             return newEvent;

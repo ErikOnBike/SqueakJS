@@ -435,7 +435,7 @@ function CpSystemPlugin() {
         return obj.words;
       }
 
-      return obj.asString();
+      return obj;
     },
     arrayAsJavaScriptObject: function(obj) {
       var thisHandle = this;
