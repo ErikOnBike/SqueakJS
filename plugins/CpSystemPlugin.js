@@ -569,18 +569,18 @@ function CpSystemPlugin() {
     // Process instance methods
     "primitiveProcessBeIdleProcess": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       this.vm.setIdleProcess(receiver);
       return this.answerSelf(argCount);
     },
     "primitiveProcessIsSyncProcess": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       return this.answer(argCount, !!receiver.isSync);
     },
     "primitiveProcessAllowAwaitPromise": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       return this.answer(argCount, !receiver.failOnAwait);
     },
 
@@ -618,7 +618,7 @@ function CpSystemPlugin() {
     "primitiveSymbolEquals:": function(argCount) {
       if(argCount !== 1) return false;
       var otherObject = this.interpreterProxy.stackValue(0);
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var result = otherObject === receiver;
       if(!result) {
         var src = receiver.bytes || receiver.words || [];
@@ -639,7 +639,7 @@ function CpSystemPlugin() {
     },
     "primitiveSymbolIsLiteralSymbol": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var src = receiver.bytes || receiver.words || [];
       var i = 1;
       var result = src.length > 0;
@@ -664,14 +664,14 @@ function CpSystemPlugin() {
     // ByteArray instance methods
     "primitiveByteArrayAsString": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       return this.answer(argCount, receiver.asString());
     },
 
     // Number instance methods
     "primitiveNumberRaisedTo:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var exp = this.interpreterProxy.stackValue(0);
       var base = null;
       if(receiver.isFloat) {
@@ -684,7 +684,7 @@ function CpSystemPlugin() {
     },
     "primitiveNumberPrintString": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var value = null;
       if(receiver.isFloat) {
         value = receiver.float;
@@ -698,7 +698,7 @@ function CpSystemPlugin() {
       if(argCount !== 1) return false;
       var base = this.interpreterProxy.stackValue(0);
       if(typeof base !== "number" || base < 2 || base > 36) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var value = null;
       if(receiver.isFloat) {
         // Only support for floats with base 10
@@ -717,7 +717,7 @@ function CpSystemPlugin() {
     // Integer instance methods
     "primitiveIntegerAtRandom": function(argCount) {
       if(argCount !== 0) return false;
-      var upperBound = this.interpreterProxy.stackValue(argCount);
+      var upperBound = this.interpreterProxy.stackValue(0);
       if(typeof upperBound !== "number") return false;
       return this.answer(argCount, Math.floor(Math.random() * (upperBound - 1) + 1));
     },
@@ -725,7 +725,7 @@ function CpSystemPlugin() {
     // String class methods
     "primitiveStringFromWordArray:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var wordArray = this.interpreterProxy.stackValue(0);
       var src = wordArray.words || [];
       var newString = this.vm.instantiateClass(receiver, src.length);
@@ -774,7 +774,7 @@ function CpSystemPlugin() {
     },
     "primitiveStringConcatenate:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var otherString = this.interpreterProxy.stackValue(0);
       var first = receiver.bytes || receiver.words || [];
       var second = otherString.bytes || otherString.words || [];
@@ -793,7 +793,7 @@ function CpSystemPlugin() {
     "primitiveStringAsciiCompare:": function(argCount) {
       if(argCount !== 1) return false;
       var otherString = this.interpreterProxy.stackValue(0);
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var src = receiver.bytes || receiver.words || [];
       var dst = otherString.bytes || otherString.words || [];
       var minLength = Math.min(src.length, dst.length);
@@ -814,7 +814,7 @@ function CpSystemPlugin() {
     },
     "primitiveStringAsUppercase": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var src = receiver.bytes || receiver.words || [];
       var uppercaseString = this.vm.instantiateClass(receiver.sqClass, src.length);
       var dst = receiver.bytes ? uppercaseString.bytes : uppercaseString.words;
@@ -825,7 +825,7 @@ function CpSystemPlugin() {
     },
     "primitiveStringAsLowercase": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var src = receiver.bytes || receiver.words || [];
       var lowercaseString = this.vm.instantiateClass(receiver.sqClass, src.length);
       var dst = receiver.bytes ? lowercaseString.bytes : lowercaseString.words;
@@ -836,7 +836,7 @@ function CpSystemPlugin() {
     },
     "primitiveStringAsNumber": function(argCount) {
       if(argCount !== 0) return false;
-      var numberString = this.interpreterProxy.stackValue(argCount).asString();
+      var numberString = this.interpreterProxy.stackValue(0).asString();
       var result = null;
       if(numberString === "NaN") {
         result = Number.NaN;
@@ -863,7 +863,7 @@ function CpSystemPlugin() {
     },
     "primitiveStringFindTokens:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var src = receiver.bytes || receiver.words || [];
       var delimitersString = this.interpreterProxy.stackValue(0);
       var delimiters = delimitersString.bytes || delimitersString.words || [];
@@ -881,42 +881,42 @@ function CpSystemPlugin() {
     "primitiveStringIndexOf:": function(argCount) {
       if(argCount !== 1) return false;
       var character = this.interpreterProxy.stackValue(0);
-      var string = this.interpreterProxy.stackValue(argCount).asString();
+      var string = this.interpreterProxy.stackValue(1).asString();
       return this.answer(argCount, character.sqClass === this.characterClass ? string.indexOf(String.fromCodePoint(character.hash)) + 1 : 0);
     },
     "primitiveStringIncludesSubstring:": function(argCount) {
       if(argCount !== 1) return false;
-      var src = this.interpreterProxy.stackValue(argCount).asString();
+      var src = this.interpreterProxy.stackValue(1).asString();
       var substring = this.interpreterProxy.stackValue(0).asString();
       return this.answer(argCount, src.indexOf(substring) >= 0);
     },
     "primitiveStringHash": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var src = receiver.bytes || receiver.words || [];
       var hash = this.stringHash(src);
       return this.answer(argCount, hash);
     },
     "primitiveStringTrim": function(argCount) {
       if(argCount !== 0) return false;
-      var src = this.interpreterProxy.stackValue(argCount).asString();
+      var src = this.interpreterProxy.stackValue(0).asString();
       return this.answer(argCount, src.trim());
     },
     "primitiveStringTrimLeft": function(argCount) {
       if(argCount !== 0) return false;
-      var src = this.interpreterProxy.stackValue(argCount).asString();
+      var src = this.interpreterProxy.stackValue(0).asString();
       return this.answer(argCount, src.trimStart());
     },
     "primitiveStringTrimRight": function(argCount) {
       if(argCount !== 0) return false;
-      var src = this.interpreterProxy.stackValue(argCount).asString();
+      var src = this.interpreterProxy.stackValue(0).asString();
       return this.answer(argCount, src.trimEnd());
     },
 
     // WideString class methods
     "primitiveWideStringFrom:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var srcString = this.interpreterProxy.stackValue(0);
       var src = srcString.bytes || srcString.words || [];
       var newString = this.vm.instantiateClass(receiver, src.length);
@@ -986,7 +986,7 @@ function CpSystemPlugin() {
     // JavaScriptObject instance methods
     "primitiveJavaScriptObjectApply:withArguments:resultAs:": function(argCount) {
       if(argCount !== 3) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(3);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
       var selectorName = this.interpreterProxy.stackValue(2).asString();
@@ -1074,7 +1074,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectPropertyAt:resultAs:": function(argCount) {
       if(argCount !== 2) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
       var propertyName = this.interpreterProxy.stackValue(1).asString();
@@ -1089,7 +1089,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectPropertyAt:put:": function(argCount) {
       if(argCount !== 2) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
       var propertyName = this.interpreterProxy.stackValue(1).asString();
@@ -1099,7 +1099,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectRawPropertyAt:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
       var propertyName = this.interpreterProxy.stackValue(0).asString();
@@ -1115,7 +1115,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectRawPropertyAt:put:": function(argCount) {
       if(argCount !== 2) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
       var propertyName = this.interpreterProxy.stackValue(1).asString();
@@ -1125,7 +1125,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectGetSelectorNames": function(argCount) {
       if(argCount !== 0) return false;
-      var obj = this.interpreterProxy.stackValue(argCount).jsObj;
+      var obj = this.interpreterProxy.stackValue(0).jsObj;
       if(obj === undefined) return false;
 
       // Add only unique names
@@ -1141,7 +1141,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectGetSelectorType:": function(argCount) {
       if(argCount !== 1) return false;
-      var obj = this.interpreterProxy.stackValue(argCount).jsObj;
+      var obj = this.interpreterProxy.stackValue(1).jsObj;
       if(obj === undefined) return false;
       var selectorName = this.interpreterProxy.stackValue(0).asString();
       if(!selectorName) return false;
@@ -1178,7 +1178,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectGetClassRefFrom:resultAs:": function(argCount) {
       if(argCount !== 2) return false;
-      var obj = this.interpreterProxy.stackValue(argCount).jsObj;
+      var obj = this.interpreterProxy.stackValue(2).jsObj;
       if(obj === undefined) return false;
       var selectorName = this.interpreterProxy.stackValue(1).asString();
       if(!selectorName) return false;
@@ -1206,7 +1206,7 @@ function CpSystemPlugin() {
     // JavaScriptClass instance methods
     "primitiveJavaScriptClassNewInstanceWithArguments:resultAs:": function(argCount) {
       if(argCount !== 2) return false;
-      var jsClass = this.interpreterProxy.stackValue(argCount).jsObj;
+      var jsClass = this.interpreterProxy.stackValue(2).jsObj;
       var args = this.asJavaScriptObject(this.interpreterProxy.stackValue(1)) || [];
       var proxyClass = this.interpreterProxy.stackValue(0);
 
@@ -1225,7 +1225,7 @@ function CpSystemPlugin() {
     "primitiveJavaScriptFunctionArguments:": function(argCount) {
       if(argCount !== 1) return false;
       var count = this.interpreterProxy.stackValue(0);
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var jsFunc = receiver.jsObj;
       if(!jsFunc) return false;
 
@@ -1239,19 +1239,19 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptFunctionSetBlock:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var block = this.interpreterProxy.stackValue(0);
       receiver.__cp_block = block;
       return this.answerSelf(argCount);
     },
     "primitiveJavaScriptFunctionBlock": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       return this.answer(argCount, receiver.__cp_block);
     },
     "primitiveJavaScriptFunctionSetResult:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var jsFunc = receiver.jsObj;
       if(!jsFunc) return false;
       var result = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
@@ -1272,7 +1272,7 @@ function CpSystemPlugin() {
     // JavaScriptPromise instance methods
     "primitiveJavaScriptPromiseThen:onRejected:": function(argCount) {
       if(argCount !== 2) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       var fullfilledBlock = this.interpreterProxy.stackValue(1);
       var rejectBlock = this.interpreterProxy.stackValue(0);
       var promise = receiver.jsObj;
@@ -1282,7 +1282,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptPromiseCatch:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var catchBlock = this.interpreterProxy.stackValue(0);
       var promise = receiver.jsObj;
       var result = promise.catch(this.asJavaScriptObject(catchBlock));
@@ -1291,7 +1291,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptPromiseFinally:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var finallyBlock = this.interpreterProxy.stackValue(0);
       var promise = receiver.jsObj;
       var result = promise.finally(this.asJavaScriptObject(finallyBlock));
@@ -1439,7 +1439,7 @@ function CpSystemPlugin() {
     // WebSocket instance methods
     "primitiveWebSocketConnectToUrl:withEventSemaphore:": function(argCount) {
       if(argCount !== 2) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       var url = this.interpreterProxy.stackValue(1).asString();
       var semaIndex = this.interpreterProxy.stackIntegerValue(0);
 
@@ -1486,7 +1486,7 @@ function CpSystemPlugin() {
     },
     "primitiveWebSocketReceivedMessage": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var webSocketHandle = receiver.webSocketHandle;
       if(!webSocketHandle) return false;
 
@@ -1499,7 +1499,7 @@ function CpSystemPlugin() {
     },
     "primitiveWebSocketSend:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var sendBuffer = this.interpreterProxy.stackObjectValue(0);
       var webSocketHandle = receiver.webSocketHandle;
       if(!webSocketHandle) return false;
@@ -1519,7 +1519,7 @@ function CpSystemPlugin() {
     },
     "primitiveWebSocketReadyState": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var webSocketHandle = receiver.webSocketHandle;
       if(!webSocketHandle) return false;
 
@@ -1530,7 +1530,7 @@ function CpSystemPlugin() {
     },
     "primitiveWebSocketClose": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var webSocketHandle = receiver.webSocketHandle;
       if(!webSocketHandle) return false;
 

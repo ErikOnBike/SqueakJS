@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250411",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250416",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -11996,18 +11996,18 @@
       // Process instance methods
       "primitiveProcessBeIdleProcess": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         this.vm.setIdleProcess(receiver);
         return this.answerSelf(argCount);
       },
       "primitiveProcessIsSyncProcess": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         return this.answer(argCount, !!receiver.isSync);
       },
       "primitiveProcessAllowAwaitPromise": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         return this.answer(argCount, !receiver.failOnAwait);
       },
 
@@ -12045,7 +12045,7 @@
       "primitiveSymbolEquals:": function(argCount) {
         if(argCount !== 1) return false;
         var otherObject = this.interpreterProxy.stackValue(0);
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var result = otherObject === receiver;
         if(!result) {
           var src = receiver.bytes || receiver.words || [];
@@ -12066,7 +12066,7 @@
       },
       "primitiveSymbolIsLiteralSymbol": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         var src = receiver.bytes || receiver.words || [];
         var i = 1;
         var result = src.length > 0;
@@ -12091,14 +12091,14 @@
       // ByteArray instance methods
       "primitiveByteArrayAsString": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         return this.answer(argCount, receiver.asString());
       },
 
       // Number instance methods
       "primitiveNumberRaisedTo:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var exp = this.interpreterProxy.stackValue(0);
         var base = null;
         if(receiver.isFloat) {
@@ -12111,7 +12111,7 @@
       },
       "primitiveNumberPrintString": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         var value = null;
         if(receiver.isFloat) {
           value = receiver.float;
@@ -12125,7 +12125,7 @@
         if(argCount !== 1) return false;
         var base = this.interpreterProxy.stackValue(0);
         if(typeof base !== "number" || base < 2 || base > 36) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var value = null;
         if(receiver.isFloat) {
           // Only support for floats with base 10
@@ -12144,7 +12144,7 @@
       // Integer instance methods
       "primitiveIntegerAtRandom": function(argCount) {
         if(argCount !== 0) return false;
-        var upperBound = this.interpreterProxy.stackValue(argCount);
+        var upperBound = this.interpreterProxy.stackValue(0);
         if(typeof upperBound !== "number") return false;
         return this.answer(argCount, Math.floor(Math.random() * (upperBound - 1) + 1));
       },
@@ -12152,7 +12152,7 @@
       // String class methods
       "primitiveStringFromWordArray:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var wordArray = this.interpreterProxy.stackValue(0);
         var src = wordArray.words || [];
         var newString = this.vm.instantiateClass(receiver, src.length);
@@ -12201,7 +12201,7 @@
       },
       "primitiveStringConcatenate:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var otherString = this.interpreterProxy.stackValue(0);
         var first = receiver.bytes || receiver.words || [];
         var second = otherString.bytes || otherString.words || [];
@@ -12220,7 +12220,7 @@
       "primitiveStringAsciiCompare:": function(argCount) {
         if(argCount !== 1) return false;
         var otherString = this.interpreterProxy.stackValue(0);
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var src = receiver.bytes || receiver.words || [];
         var dst = otherString.bytes || otherString.words || [];
         var minLength = Math.min(src.length, dst.length);
@@ -12241,7 +12241,7 @@
       },
       "primitiveStringAsUppercase": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         var src = receiver.bytes || receiver.words || [];
         var uppercaseString = this.vm.instantiateClass(receiver.sqClass, src.length);
         var dst = receiver.bytes ? uppercaseString.bytes : uppercaseString.words;
@@ -12252,7 +12252,7 @@
       },
       "primitiveStringAsLowercase": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         var src = receiver.bytes || receiver.words || [];
         var lowercaseString = this.vm.instantiateClass(receiver.sqClass, src.length);
         var dst = receiver.bytes ? lowercaseString.bytes : lowercaseString.words;
@@ -12263,7 +12263,7 @@
       },
       "primitiveStringAsNumber": function(argCount) {
         if(argCount !== 0) return false;
-        var numberString = this.interpreterProxy.stackValue(argCount).asString();
+        var numberString = this.interpreterProxy.stackValue(0).asString();
         var result = null;
         if(numberString === "NaN") {
           result = Number.NaN;
@@ -12290,7 +12290,7 @@
       },
       "primitiveStringFindTokens:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var src = receiver.bytes || receiver.words || [];
         var delimitersString = this.interpreterProxy.stackValue(0);
         var delimiters = delimitersString.bytes || delimitersString.words || [];
@@ -12308,42 +12308,42 @@
       "primitiveStringIndexOf:": function(argCount) {
         if(argCount !== 1) return false;
         var character = this.interpreterProxy.stackValue(0);
-        var string = this.interpreterProxy.stackValue(argCount).asString();
+        var string = this.interpreterProxy.stackValue(1).asString();
         return this.answer(argCount, character.sqClass === this.characterClass ? string.indexOf(String.fromCodePoint(character.hash)) + 1 : 0);
       },
       "primitiveStringIncludesSubstring:": function(argCount) {
         if(argCount !== 1) return false;
-        var src = this.interpreterProxy.stackValue(argCount).asString();
+        var src = this.interpreterProxy.stackValue(1).asString();
         var substring = this.interpreterProxy.stackValue(0).asString();
         return this.answer(argCount, src.indexOf(substring) >= 0);
       },
       "primitiveStringHash": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         var src = receiver.bytes || receiver.words || [];
         var hash = this.stringHash(src);
         return this.answer(argCount, hash);
       },
       "primitiveStringTrim": function(argCount) {
         if(argCount !== 0) return false;
-        var src = this.interpreterProxy.stackValue(argCount).asString();
+        var src = this.interpreterProxy.stackValue(0).asString();
         return this.answer(argCount, src.trim());
       },
       "primitiveStringTrimLeft": function(argCount) {
         if(argCount !== 0) return false;
-        var src = this.interpreterProxy.stackValue(argCount).asString();
+        var src = this.interpreterProxy.stackValue(0).asString();
         return this.answer(argCount, src.trimStart());
       },
       "primitiveStringTrimRight": function(argCount) {
         if(argCount !== 0) return false;
-        var src = this.interpreterProxy.stackValue(argCount).asString();
+        var src = this.interpreterProxy.stackValue(0).asString();
         return this.answer(argCount, src.trimEnd());
       },
 
       // WideString class methods
       "primitiveWideStringFrom:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var srcString = this.interpreterProxy.stackValue(0);
         var src = srcString.bytes || srcString.words || [];
         var newString = this.vm.instantiateClass(receiver, src.length);
@@ -12413,7 +12413,7 @@
       // JavaScriptObject instance methods
       "primitiveJavaScriptObjectApply:withArguments:resultAs:": function(argCount) {
         if(argCount !== 3) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(3);
         var obj = receiver.jsObj;
         if(obj === undefined) return false;
         var selectorName = this.interpreterProxy.stackValue(2).asString();
@@ -12501,7 +12501,7 @@
       },
       "primitiveJavaScriptObjectPropertyAt:resultAs:": function(argCount) {
         if(argCount !== 2) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(2);
         var obj = receiver.jsObj;
         if(obj === undefined) return false;
         var propertyName = this.interpreterProxy.stackValue(1).asString();
@@ -12516,7 +12516,7 @@
       },
       "primitiveJavaScriptObjectPropertyAt:put:": function(argCount) {
         if(argCount !== 2) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(2);
         var obj = receiver.jsObj;
         if(obj === undefined) return false;
         var propertyName = this.interpreterProxy.stackValue(1).asString();
@@ -12526,7 +12526,7 @@
       },
       "primitiveJavaScriptObjectRawPropertyAt:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var obj = receiver.jsObj;
         if(obj === undefined) return false;
         var propertyName = this.interpreterProxy.stackValue(0).asString();
@@ -12542,7 +12542,7 @@
       },
       "primitiveJavaScriptObjectRawPropertyAt:put:": function(argCount) {
         if(argCount !== 2) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(2);
         var obj = receiver.jsObj;
         if(obj === undefined) return false;
         var propertyName = this.interpreterProxy.stackValue(1).asString();
@@ -12552,7 +12552,7 @@
       },
       "primitiveJavaScriptObjectGetSelectorNames": function(argCount) {
         if(argCount !== 0) return false;
-        var obj = this.interpreterProxy.stackValue(argCount).jsObj;
+        var obj = this.interpreterProxy.stackValue(0).jsObj;
         if(obj === undefined) return false;
 
         // Add only unique names
@@ -12568,7 +12568,7 @@
       },
       "primitiveJavaScriptObjectGetSelectorType:": function(argCount) {
         if(argCount !== 1) return false;
-        var obj = this.interpreterProxy.stackValue(argCount).jsObj;
+        var obj = this.interpreterProxy.stackValue(1).jsObj;
         if(obj === undefined) return false;
         var selectorName = this.interpreterProxy.stackValue(0).asString();
         if(!selectorName) return false;
@@ -12605,7 +12605,7 @@
       },
       "primitiveJavaScriptObjectGetClassRefFrom:resultAs:": function(argCount) {
         if(argCount !== 2) return false;
-        var obj = this.interpreterProxy.stackValue(argCount).jsObj;
+        var obj = this.interpreterProxy.stackValue(2).jsObj;
         if(obj === undefined) return false;
         var selectorName = this.interpreterProxy.stackValue(1).asString();
         if(!selectorName) return false;
@@ -12633,7 +12633,7 @@
       // JavaScriptClass instance methods
       "primitiveJavaScriptClassNewInstanceWithArguments:resultAs:": function(argCount) {
         if(argCount !== 2) return false;
-        var jsClass = this.interpreterProxy.stackValue(argCount).jsObj;
+        var jsClass = this.interpreterProxy.stackValue(2).jsObj;
         var args = this.asJavaScriptObject(this.interpreterProxy.stackValue(1)) || [];
         var proxyClass = this.interpreterProxy.stackValue(0);
 
@@ -12652,7 +12652,7 @@
       "primitiveJavaScriptFunctionArguments:": function(argCount) {
         if(argCount !== 1) return false;
         var count = this.interpreterProxy.stackValue(0);
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var jsFunc = receiver.jsObj;
         if(!jsFunc) return false;
 
@@ -12666,19 +12666,19 @@
       },
       "primitiveJavaScriptFunctionSetBlock:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var block = this.interpreterProxy.stackValue(0);
         receiver.__cp_block = block;
         return this.answerSelf(argCount);
       },
       "primitiveJavaScriptFunctionBlock": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         return this.answer(argCount, receiver.__cp_block);
       },
       "primitiveJavaScriptFunctionSetResult:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var jsFunc = receiver.jsObj;
         if(!jsFunc) return false;
         var result = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
@@ -12699,7 +12699,7 @@
       // JavaScriptPromise instance methods
       "primitiveJavaScriptPromiseThen:onRejected:": function(argCount) {
         if(argCount !== 2) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(2);
         var fullfilledBlock = this.interpreterProxy.stackValue(1);
         var rejectBlock = this.interpreterProxy.stackValue(0);
         var promise = receiver.jsObj;
@@ -12709,7 +12709,7 @@
       },
       "primitiveJavaScriptPromiseCatch:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var catchBlock = this.interpreterProxy.stackValue(0);
         var promise = receiver.jsObj;
         var result = promise.catch(this.asJavaScriptObject(catchBlock));
@@ -12718,7 +12718,7 @@
       },
       "primitiveJavaScriptPromiseFinally:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var finallyBlock = this.interpreterProxy.stackValue(0);
         var promise = receiver.jsObj;
         var result = promise.finally(this.asJavaScriptObject(finallyBlock));
@@ -12866,7 +12866,7 @@
       // WebSocket instance methods
       "primitiveWebSocketConnectToUrl:withEventSemaphore:": function(argCount) {
         if(argCount !== 2) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(2);
         var url = this.interpreterProxy.stackValue(1).asString();
         var semaIndex = this.interpreterProxy.stackIntegerValue(0);
 
@@ -12913,7 +12913,7 @@
       },
       "primitiveWebSocketReceivedMessage": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         var webSocketHandle = receiver.webSocketHandle;
         if(!webSocketHandle) return false;
 
@@ -12926,7 +12926,7 @@
       },
       "primitiveWebSocketSend:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var sendBuffer = this.interpreterProxy.stackObjectValue(0);
         var webSocketHandle = receiver.webSocketHandle;
         if(!webSocketHandle) return false;
@@ -12946,7 +12946,7 @@
       },
       "primitiveWebSocketReadyState": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         var webSocketHandle = receiver.webSocketHandle;
         if(!webSocketHandle) return false;
 
@@ -12957,7 +12957,7 @@
       },
       "primitiveWebSocketClose": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         var webSocketHandle = receiver.webSocketHandle;
         if(!webSocketHandle) return false;
 
@@ -13258,7 +13258,7 @@
           console.error("The prefix " + prefix + " is already installed in the browser");
           return false;
         }
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(2);
         this.namespaces.push({ prefix: prefix, uri: namespaceURI, elementClass: receiver });
         return this.answerSelf(argCount);
       },
@@ -13314,7 +13314,7 @@
         if(argCount !== 1) return false;
         var id = this.interpreterProxy.stackValue(0).asString();
         if(!id) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         // Check the receiver is a root element (this means it has an activeElement)
         if(!domElement || domElement.activeElement === undefined) return false;
         var element = domElement.getElementById(id);
@@ -13324,7 +13324,7 @@
         if(argCount !== 1) return false;
         var querySelector = this.interpreterProxy.stackValue(0).asString();
         if(!querySelector) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         var thisHandle = this;
         var matchingElements = Array.from(domElement.querySelectorAll(querySelector))
@@ -13338,7 +13338,7 @@
         if(argCount !== 1) return false;
         var querySelector = this.interpreterProxy.stackValue(0).asString();
         if(!querySelector) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         var firstMatchingElement = domElement.querySelector(querySelector);
         return this.answer(argCount, this.instanceForElement(firstMatchingElement));
@@ -13347,20 +13347,20 @@
         if(argCount !== 1) return false;
         var selector = this.interpreterProxy.stackValue(0).asString();
         if(!selector) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         return this.answer(argCount, domElement.matches(selector));
       },
       "primitiveDomElementParent": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         var parentElement = domElement.parentElement;
         return this.answer(argCount, this.instanceForElement(parentElement));
       },
       "primitiveDomElementChildren": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         var thisHandle = this;
         var childElements = Array.from(domElement.children)
@@ -13372,14 +13372,14 @@
       },
       "primitiveDomElementPreviousSibling": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         var siblingElement = domElement.previousElementSibling;
         return this.answer(argCount, this.instanceForElement(siblingElement));
       },
       "primitiveDomElementNextSibling": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         var siblingElement = domElement.nextElementSibling;
         return this.answer(argCount, this.instanceForElement(siblingElement));
@@ -13388,47 +13388,47 @@
         if(argCount !== 1) return false;
         var parentElement = this.interpreterProxy.stackValue(0).domElement;
         if(!parentElement) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         return this.answer(argCount, parentElement !== domElement && parentElement.contains(domElement));
       },
       "primitiveDomElementTagName": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         return this.answer(argCount, domElement.localName || domElement.tagName || "--shadow--");
       },
       "primitiveDomElementId": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         return this.answer(argCount, domElement.id);
       },
       "primitiveDomElementId:": function(argCount) {
         if(argCount !== 1) return false;
         var id = this.interpreterProxy.stackValue(0).asString();
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         domElement.id = id;
         return this.answerSelf(argCount);
       },
       "primitiveDomElementTextContent": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         return this.answer(argCount, domElement.textContent);
       },
       "primitiveDomElementTextContent:": function(argCount) {
         if(argCount !== 1) return false;
         var textContent = this.interpreterProxy.stackValue(0).asString();
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         domElement.textContent = textContent;
         return this.answerSelf(argCount);
       },
       "primitiveDomElementLocalTextContent": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         var textNodes = Array.prototype.filter.call(domElement.childNodes, function(childNode) { return childNode.nodeType === Node.TEXT_NODE; });
         var textContent = textNodes.map(function(textNode) { return textNode.textContent; }).join("");
@@ -13436,7 +13436,7 @@
       },
       "primitiveDomElementMarkupContent": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         return this.answer(argCount, domElement.innerHTML);
       },
@@ -13444,7 +13444,7 @@
         if(argCount !== 1) return false;
         var content = this.interpreterProxy.stackValue(0);
         var markupContent = content.asString();
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         domElement.innerHTML = markupContent;
 
@@ -13457,7 +13457,7 @@
         if(argCount !== 1) return false;
         var className = this.interpreterProxy.stackValue(0).asString();
         if(!className) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         return this.answer(argCount, domElement.classList.contains(className));
       },
@@ -13465,7 +13465,7 @@
         if(argCount !== 1) return false;
         var className = this.interpreterProxy.stackValue(0).asString();
         if(!className) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         domElement.classList.add(className);
         return this.answerSelf(argCount);
@@ -13474,7 +13474,7 @@
         if(argCount !== 1) return false;
         var className = this.interpreterProxy.stackValue(0).asString();
         if(!className) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         domElement.classList.remove(className);
         return this.answerSelf(argCount);
@@ -13483,7 +13483,7 @@
         if(argCount !== 1) return false;
         var attributeName = this.interpreterProxy.stackValue(0).asString();
         if(!attributeName) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         var namespaceURI = this.namespaceURIFromName(attributeName);
         var attributeValue;
@@ -13500,7 +13500,7 @@
         if(!attributeName) return false;
         var value = this.interpreterProxy.stackValue(0);
         var attributeValue = value.isNil ? null: value.asString();
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(2).domElement;
         if(!domElement) return false;
         var namespaceURI = this.namespaceURIFromName(attributeName);
         if(attributeValue === null) {
@@ -13522,7 +13522,7 @@
         if(argCount !== 1) return false;
         var attributeName = this.interpreterProxy.stackValue(0).asString();
         if(!attributeName) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         var namespaceURI = this.namespaceURIFromName(attributeName);
         if(namespaceURI) {
@@ -13536,7 +13536,7 @@
         if(argCount !== 1) return false;
         var styleName = this.interpreterProxy.stackValue(0).asString();
         if(!styleName) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         return this.answer(argCount, domElement.style.getPropertyValue(styleName) ||
             window.getComputedStyle(domElement).getPropertyValue(styleName));
@@ -13547,7 +13547,7 @@
         if(!styleName) return false;
         var value = this.interpreterProxy.stackValue(0);
         var styleValue = value.isNil ? null : value.asString();
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(2).domElement;
         if(!domElement) return false;
         if(styleValue === null) {
           domElement.style.removeProperty(styleName);
@@ -13560,7 +13560,7 @@
         if(argCount !== 1) return false;
         var styleName = this.interpreterProxy.stackValue(0).asString();
         if(!styleName) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         domElement.style.removeProperty(styleName);
         return this.answerSelf(argCount);
@@ -13569,7 +13569,7 @@
         if(argCount !== 1) return false;
         var propertyName = this.interpreterProxy.stackValue(0).asString();
         if(!propertyName) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         return this.answer(argCount, domElement[propertyName]);
       },
@@ -13578,20 +13578,20 @@
         var propertyName = this.interpreterProxy.stackValue(1).asString();
         if(!propertyName) return false;
         var propertyValue = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0));
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(2).domElement;
         if(!domElement) return false;
         domElement[propertyName] = propertyValue;
         return this.answerSelf(argCount);
       },
       "primitiveDomElementBoundingClientRectangle": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         return this.answer(argCount, this.makeDomRectangle(domElement.getBoundingClientRect()));
       },
       "primitiveDomElementClone": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         var clone = domElement.cloneNode(false);
         // Remove id to prevent duplication
@@ -13611,7 +13611,7 @@
         var childInstance = this.interpreterProxy.stackValue(0);
         var childElement = childInstance.domElement;
         if(!childElement) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         if(domElement.children.length === 0 && domElement.childNodes.length > 0) {
           // Remove any existing text content when there are no children yet.
@@ -13628,7 +13628,7 @@
         if(!childElement) return false;
         var siblingElement = this.interpreterProxy.stackValue(0).domElement;
         if(!siblingElement) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(2).domElement;
         if(!domElement || siblingElement.parentElement !== domElement) return false;
         domElement.insertBefore(childElement, siblingElement);
         return this.answer(argCount, childInstance);
@@ -13640,7 +13640,7 @@
         var replacementInstance = this.interpreterProxy.stackValue(0);
         var replacementElement = replacementInstance.domElement;
         if(!replacementElement) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(2).domElement;
         if(!domElement || childElement.parentElement !== domElement) return false;
         domElement.replaceChild(replacementElement, childElement);
         return this.answer(argCount, replacementInstance);
@@ -13650,7 +13650,7 @@
         var childInstance = this.interpreterProxy.stackValue(0);
         var childElement = childInstance.domElement;
         if(!childElement) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
         if(childElement.parentElement !== domElement) return false;
         domElement.removeChild(childElement);
@@ -13658,7 +13658,7 @@
       },
       "primitiveDomElementUnregisterAllInterest": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         if(domElement.__cp_event_listeners) {
           domElement.__cp_event_listeners.forEach(function(eventListeners, eventClass) {
@@ -13672,7 +13672,7 @@
       },
       "primitiveDomElementApply:withArguments:": function(argCount) {
         if(argCount !== 2) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(2).domElement;
         if(!domElement) return false;
         var functionName = this.interpreterProxy.stackValue(1).asString();
         if(!functionName) return false;
@@ -13681,7 +13681,7 @@
       },
       "primitiveDomElementApply:withArguments:resultAs:": function(argCount) {
         if(argCount !== 3) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(3).domElement;
         if(!domElement) return false;
         var functionName = this.interpreterProxy.stackValue(2).asString();
         if(!functionName) return false;
@@ -13718,7 +13718,7 @@
       // WebComponent class methods
       "primitiveWebComponentRegister": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         if(receiver.customTag !== undefined) {
           console.error("Registering a WebComponent which already has a custom tag: " + receiver.customTag);
           return false;
@@ -13739,13 +13739,13 @@
       },
       "primitiveWebComponentTagName": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         var tagName = this.tagNameFromClass(receiver);
         return this.answer(argCount, tagName);
       },
       "primitiveWebComponentShadowRoot": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         return this.answer(argCount, this.instanceForElement(domElement.shadowRoot));
       },
@@ -13753,7 +13753,7 @@
       // WebComponent instance methods
       "primitiveWebComponentTextContent": function(argCount) {
         if(argCount !== 0) return false;
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
 
         // Extract text nodes from myself and all children (not being slotted elements)
@@ -13770,7 +13770,7 @@
       "primitiveWebComponentTextContent:": function(argCount) {
         if(argCount !== 1) return false;
         var textContent = this.interpreterProxy.stackValue(0).asString();
-        var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
 
         // Remove any existing content (not being slotted elements)
@@ -13807,7 +13807,7 @@
       // TemplateComponent class methods
       "primitiveTemplateComponentRegisterStyleAndTemplate": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         if(receiver.customTag === undefined) {
           console.error("Registering a TemplateComponent without a custom tag");
           return false;
@@ -13855,7 +13855,7 @@
         if(argCount !== 2) return false;
         var styleString = this.interpreterProxy.stackValue(1).asString();
         var templateString = this.interpreterProxy.stackValue(0).asString();
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(2);
 
         // Set the style without installing it (this will happen when installing the template)
         receiver.style = styleString;
@@ -13868,7 +13868,7 @@
       "primitiveTemplateComponentInstallStyle:": function(argCount) {
         if(argCount !== 1) return false;
         var styleString = this.interpreterProxy.stackValue(0).asString();
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         receiver.style = styleString;
         this.installStyleInTemplate(receiver);
         this.styleAllInstances(receiver);
@@ -13902,7 +13902,7 @@
       "primitiveTemplateComponentInstallTemplate:": function(argCount) {
         if(argCount !== 1) return false;
         var templateString = this.interpreterProxy.stackValue(0).asString();
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         this.installTemplate(receiver, templateString);
         this.renderAllInstances(receiver);
         return this.answerSelf(argCount);
@@ -13937,7 +13937,7 @@
       },
       "primitiveTemplateComponentRenderAllInstances": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         if(!receiver.templateElement) return false;
         this.renderAllInstances(receiver);
         return this.answerSelf(argCount);
@@ -14022,7 +14022,7 @@
       // TemplateComponent instance methods
       "primitiveTemplateComponentEnsureShadowRoot": function(argCount) {
         if(argCount !== 0) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(0);
         var domElement = receiver.domElement;
         if(!domElement) return false;
         this.ensureShadowRoot(receiver.sqClass, domElement);
@@ -14076,7 +14076,7 @@
       },
       "primitiveEventAddListenerTo:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var element = this.interpreterProxy.stackValue(0);
         var domElement = element.domElement;
         if(!domElement) return false;
@@ -14139,7 +14139,7 @@
       },
       "primitiveEventRemoveListenerFrom:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var element = this.interpreterProxy.stackValue(0);
         var domElement = element.domElement;
         if(!domElement) return false;
@@ -14157,7 +14157,7 @@
       },
       "primitiveEventIsListenedToOn:": function(argCount) {
         if(argCount !== 1) return false;
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         var element = this.interpreterProxy.stackValue(0);
         var domElement = element.domElement;
         if(!domElement) return false;
@@ -14194,7 +14194,7 @@
         if(argCount !== 1) return false;
         var propertyName = this.interpreterProxy.stackValue(0).asString();
         if(!propertyName) return false;
-        var event = this.interpreterProxy.stackValue(argCount).event;
+        var event = this.interpreterProxy.stackValue(1).event;
         if(!event) return false;
         var propertyValue = event[propertyName];
         if(!propertyValue && propertyName === "currentTarget") {
@@ -14206,7 +14206,7 @@
       },
       "primitiveEventModifiers": function(argCount) {
         if(argCount !== 0) return false;
-        var event = this.interpreterProxy.stackValue(argCount).event;
+        var event = this.interpreterProxy.stackValue(0).event;
         if(!event) return false;
         var modifiers =
           (event.altKey ? 1 : 0) +
@@ -14218,14 +14218,14 @@
       },
       "primitiveEventPreventDefault": function(argCount) {
         if(argCount !== 0) return false;
-        var event = this.interpreterProxy.stackValue(argCount).event;
+        var event = this.interpreterProxy.stackValue(0).event;
         if(!event) return false;
         event.preventDefault();
         return this.answerSelf(argCount);
       },
       "primitiveEventStopPropagation": function(argCount) {
         if(argCount !== 0) return false;
-        var event = this.interpreterProxy.stackValue(argCount).event;
+        var event = this.interpreterProxy.stackValue(0).event;
         if(!event) return false;
         // Check the current target using the 'backup' value below,
         // because in a throttled event the actual value has become null.
@@ -14236,7 +14236,7 @@
       },
       "primitiveEventStopImmediatePropagation": function(argCount) {
         if(argCount !== 0) return false;
-        var event = this.interpreterProxy.stackValue(argCount).event;
+        var event = this.interpreterProxy.stackValue(0).event;
         if(!event) return false;
         event.stopImmediatePropagation();
         event.__cp_stop_propagation = true;
@@ -14245,7 +14245,7 @@
       },
       "primitiveEventIsStopped": function(argCount) {
         if(argCount !== 0) return false;
-        var event = this.interpreterProxy.stackValue(argCount).event;
+        var event = this.interpreterProxy.stackValue(0).event;
         if(!event) return false;
         // Check the current target using the 'backup' value below,
         // because in a throttled event the actual value has become null.
@@ -14262,12 +14262,32 @@
         }
         return this.answer(argCount, isStopped);
       },
+      "primitiveEventCopy": function(argCount) {
+        if(argCount !== 0) return false;
+        var event = this.interpreterProxy.stackValue(0).event;
+
+        // Create dummy event object containing only properties (not being functions)
+        let dummyEvent = {};
+        for(key in event) {
+          let value = event[key];
+          if(!value || !value.apply) {
+            dummyEvent[key] = value;
+          }
+        }
+
+        // Create new instance and connect dummy event
+        let eventClass = this.eventClassMap[event.type];
+        let newEvent = this.vm.instantiateClass(eventClass, 0);
+        newEvent.event = dummyEvent;
+
+        return this.amswer(argCount, newEvent);
+      },
 
       // CustomEvent instance methods
       "primitiveCustomEventCreateWithDetail:": function(argCount) {
         if(argCount !== 1) return false;
         var detail = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0));
-        var receiver = this.interpreterProxy.stackValue(argCount);
+        var receiver = this.interpreterProxy.stackValue(1);
         if(receiver.event) return false; // Already created!
         var type = receiver.sqClass.type;
         receiver.event = new CustomEvent(type, { detail: detail, bubbles: true, cancelable: true, composed: true });
@@ -14278,7 +14298,7 @@
         if(argCount !== 1) return false;
         var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
-        var event = this.interpreterProxy.stackValue(argCount).event;
+        var event = this.interpreterProxy.stackValue(1).event;
         if(!event) return false;
         // Dispatch event 'outside' this event handling method (to prevent stack getting out of balance)
         window.setTimeout(function() { domElement.dispatchEvent(event); }, 0);

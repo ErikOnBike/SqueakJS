@@ -206,7 +206,7 @@ function CpDOMPlugin() {
         console.error("The prefix " + prefix + " is already installed in the browser");
         return false;
       }
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       this.namespaces.push({ prefix: prefix, uri: namespaceURI, elementClass: receiver });
       return this.answerSelf(argCount);
     },
@@ -262,7 +262,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var id = this.interpreterProxy.stackValue(0).asString();
       if(!id) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       // Check the receiver is a root element (this means it has an activeElement)
       if(!domElement || domElement.activeElement === undefined) return false;
       var element = domElement.getElementById(id);
@@ -272,7 +272,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var querySelector = this.interpreterProxy.stackValue(0).asString();
       if(!querySelector) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       var thisHandle = this;
       var matchingElements = Array.from(domElement.querySelectorAll(querySelector))
@@ -286,7 +286,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var querySelector = this.interpreterProxy.stackValue(0).asString();
       if(!querySelector) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       var firstMatchingElement = domElement.querySelector(querySelector);
       return this.answer(argCount, this.instanceForElement(firstMatchingElement));
@@ -295,20 +295,20 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var selector = this.interpreterProxy.stackValue(0).asString();
       if(!selector) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.matches(selector));
     },
     "primitiveDomElementParent": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var parentElement = domElement.parentElement;
       return this.answer(argCount, this.instanceForElement(parentElement));
     },
     "primitiveDomElementChildren": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var thisHandle = this;
       var childElements = Array.from(domElement.children)
@@ -320,14 +320,14 @@ function CpDOMPlugin() {
     },
     "primitiveDomElementPreviousSibling": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var siblingElement = domElement.previousElementSibling;
       return this.answer(argCount, this.instanceForElement(siblingElement));
     },
     "primitiveDomElementNextSibling": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var siblingElement = domElement.nextElementSibling;
       return this.answer(argCount, this.instanceForElement(siblingElement));
@@ -336,47 +336,47 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var parentElement = this.interpreterProxy.stackValue(0).domElement;
       if(!parentElement) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       return this.answer(argCount, parentElement !== domElement && parentElement.contains(domElement));
     },
     "primitiveDomElementTagName": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.localName || domElement.tagName || "--shadow--");
     },
     "primitiveDomElementId": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.id);
     },
     "primitiveDomElementId:": function(argCount) {
       if(argCount !== 1) return false;
       var id = this.interpreterProxy.stackValue(0).asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.id = id;
       return this.answerSelf(argCount);
     },
     "primitiveDomElementTextContent": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.textContent);
     },
     "primitiveDomElementTextContent:": function(argCount) {
       if(argCount !== 1) return false;
       var textContent = this.interpreterProxy.stackValue(0).asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.textContent = textContent;
       return this.answerSelf(argCount);
     },
     "primitiveDomElementLocalTextContent": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var textNodes = Array.prototype.filter.call(domElement.childNodes, function(childNode) { return childNode.nodeType === Node.TEXT_NODE; });
       var textContent = textNodes.map(function(textNode) { return textNode.textContent; }).join("");
@@ -384,7 +384,7 @@ function CpDOMPlugin() {
     },
     "primitiveDomElementMarkupContent": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.innerHTML);
     },
@@ -392,7 +392,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var content = this.interpreterProxy.stackValue(0);
       var markupContent = content.asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.innerHTML = markupContent;
 
@@ -405,7 +405,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var className = this.interpreterProxy.stackValue(0).asString();
       if(!className) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.classList.contains(className));
     },
@@ -413,7 +413,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var className = this.interpreterProxy.stackValue(0).asString();
       if(!className) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.classList.add(className);
       return this.answerSelf(argCount);
@@ -422,7 +422,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var className = this.interpreterProxy.stackValue(0).asString();
       if(!className) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.classList.remove(className);
       return this.answerSelf(argCount);
@@ -431,7 +431,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var attributeName = this.interpreterProxy.stackValue(0).asString();
       if(!attributeName) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       var namespaceURI = this.namespaceURIFromName(attributeName);
       var attributeValue;
@@ -448,7 +448,7 @@ function CpDOMPlugin() {
       if(!attributeName) return false;
       var value = this.interpreterProxy.stackValue(0);
       var attributeValue = value.isNil ? null: value.asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
       if(!domElement) return false;
       var namespaceURI = this.namespaceURIFromName(attributeName);
       if(attributeValue === null) {
@@ -470,7 +470,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var attributeName = this.interpreterProxy.stackValue(0).asString();
       if(!attributeName) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       var namespaceURI = this.namespaceURIFromName(attributeName);
       if(namespaceURI) {
@@ -484,7 +484,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var styleName = this.interpreterProxy.stackValue(0).asString();
       if(!styleName) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.style.getPropertyValue(styleName) ||
           window.getComputedStyle(domElement).getPropertyValue(styleName));
@@ -495,7 +495,7 @@ function CpDOMPlugin() {
       if(!styleName) return false;
       var value = this.interpreterProxy.stackValue(0);
       var styleValue = value.isNil ? null : value.asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
       if(!domElement) return false;
       if(styleValue === null) {
         domElement.style.removeProperty(styleName);
@@ -508,7 +508,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var styleName = this.interpreterProxy.stackValue(0).asString();
       if(!styleName) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.style.removeProperty(styleName);
       return this.answerSelf(argCount);
@@ -517,7 +517,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var propertyName = this.interpreterProxy.stackValue(0).asString();
       if(!propertyName) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement[propertyName]);
     },
@@ -526,20 +526,20 @@ function CpDOMPlugin() {
       var propertyName = this.interpreterProxy.stackValue(1).asString();
       if(!propertyName) return false;
       var propertyValue = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0));
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
       if(!domElement) return false;
       domElement[propertyName] = propertyValue;
       return this.answerSelf(argCount);
     },
     "primitiveDomElementBoundingClientRectangle": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, this.makeDomRectangle(domElement.getBoundingClientRect()));
     },
     "primitiveDomElementClone": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var clone = domElement.cloneNode(false);
       // Remove id to prevent duplication
@@ -559,7 +559,7 @@ function CpDOMPlugin() {
       var childInstance = this.interpreterProxy.stackValue(0);
       var childElement = childInstance.domElement;
       if(!childElement) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       if(domElement.children.length === 0 && domElement.childNodes.length > 0) {
         // Remove any existing text content when there are no children yet.
@@ -576,7 +576,7 @@ function CpDOMPlugin() {
       if(!childElement) return false;
       var siblingElement = this.interpreterProxy.stackValue(0).domElement;
       if(!siblingElement) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
       if(!domElement || siblingElement.parentElement !== domElement) return false;
       domElement.insertBefore(childElement, siblingElement);
       return this.answer(argCount, childInstance);
@@ -588,7 +588,7 @@ function CpDOMPlugin() {
       var replacementInstance = this.interpreterProxy.stackValue(0);
       var replacementElement = replacementInstance.domElement;
       if(!replacementElement) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
       if(!domElement || childElement.parentElement !== domElement) return false;
       domElement.replaceChild(replacementElement, childElement);
       return this.answer(argCount, replacementInstance);
@@ -598,7 +598,7 @@ function CpDOMPlugin() {
       var childInstance = this.interpreterProxy.stackValue(0);
       var childElement = childInstance.domElement;
       if(!childElement) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       if(childElement.parentElement !== domElement) return false;
       domElement.removeChild(childElement);
@@ -606,7 +606,7 @@ function CpDOMPlugin() {
     },
     "primitiveDomElementUnregisterAllInterest": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       if(domElement.__cp_event_listeners) {
         domElement.__cp_event_listeners.forEach(function(eventListeners, eventClass) {
@@ -620,7 +620,7 @@ function CpDOMPlugin() {
     },
     "primitiveDomElementApply:withArguments:": function(argCount) {
       if(argCount !== 2) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
       if(!domElement) return false;
       var functionName = this.interpreterProxy.stackValue(1).asString();
       if(!functionName) return false;
@@ -629,7 +629,7 @@ function CpDOMPlugin() {
     },
     "primitiveDomElementApply:withArguments:resultAs:": function(argCount) {
       if(argCount !== 3) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(3).domElement;
       if(!domElement) return false;
       var functionName = this.interpreterProxy.stackValue(2).asString();
       if(!functionName) return false;
@@ -666,7 +666,7 @@ function CpDOMPlugin() {
     // WebComponent class methods
     "primitiveWebComponentRegister": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       if(receiver.customTag !== undefined) {
         console.error("Registering a WebComponent which already has a custom tag: " + receiver.customTag);
         return false;
@@ -687,13 +687,13 @@ function CpDOMPlugin() {
     },
     "primitiveWebComponentTagName": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var tagName = this.tagNameFromClass(receiver);
       return this.answer(argCount, tagName);
     },
     "primitiveWebComponentShadowRoot": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, this.instanceForElement(domElement.shadowRoot));
     },
@@ -701,7 +701,7 @@ function CpDOMPlugin() {
     // WebComponent instance methods
     "primitiveWebComponentTextContent": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
 
       // Extract text nodes from myself and all children (not being slotted elements)
@@ -718,7 +718,7 @@ function CpDOMPlugin() {
     "primitiveWebComponentTextContent:": function(argCount) {
       if(argCount !== 1) return false;
       var textContent = this.interpreterProxy.stackValue(0).asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
 
       // Remove any existing content (not being slotted elements)
@@ -755,7 +755,7 @@ function CpDOMPlugin() {
     // TemplateComponent class methods
     "primitiveTemplateComponentRegisterStyleAndTemplate": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       if(receiver.customTag === undefined) {
         console.error("Registering a TemplateComponent without a custom tag");
         return false;
@@ -803,7 +803,7 @@ function CpDOMPlugin() {
       if(argCount !== 2) return false;
       var styleString = this.interpreterProxy.stackValue(1).asString();
       var templateString = this.interpreterProxy.stackValue(0).asString();
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
 
       // Set the style without installing it (this will happen when installing the template)
       receiver.style = styleString;
@@ -816,7 +816,7 @@ function CpDOMPlugin() {
     "primitiveTemplateComponentInstallStyle:": function(argCount) {
       if(argCount !== 1) return false;
       var styleString = this.interpreterProxy.stackValue(0).asString();
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       receiver.style = styleString;
       this.installStyleInTemplate(receiver);
       this.styleAllInstances(receiver);
@@ -850,7 +850,7 @@ function CpDOMPlugin() {
     "primitiveTemplateComponentInstallTemplate:": function(argCount) {
       if(argCount !== 1) return false;
       var templateString = this.interpreterProxy.stackValue(0).asString();
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       this.installTemplate(receiver, templateString);
       this.renderAllInstances(receiver);
       return this.answerSelf(argCount);
@@ -885,7 +885,7 @@ function CpDOMPlugin() {
     },
     "primitiveTemplateComponentRenderAllInstances": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       if(!receiver.templateElement) return false;
       this.renderAllInstances(receiver);
       return this.answerSelf(argCount);
@@ -970,7 +970,7 @@ function CpDOMPlugin() {
     // TemplateComponent instance methods
     "primitiveTemplateComponentEnsureShadowRoot": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var domElement = receiver.domElement;
       if(!domElement) return false;
       this.ensureShadowRoot(receiver.sqClass, domElement);
@@ -1024,7 +1024,7 @@ function CpDOMPlugin() {
     },
     "primitiveEventAddListenerTo:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var element = this.interpreterProxy.stackValue(0);
       var domElement = element.domElement;
       if(!domElement) return false;
@@ -1087,7 +1087,7 @@ function CpDOMPlugin() {
     },
     "primitiveEventRemoveListenerFrom:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var element = this.interpreterProxy.stackValue(0);
       var domElement = element.domElement;
       if(!domElement) return false;
@@ -1105,7 +1105,7 @@ function CpDOMPlugin() {
     },
     "primitiveEventIsListenedToOn:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var element = this.interpreterProxy.stackValue(0);
       var domElement = element.domElement;
       if(!domElement) return false;
@@ -1142,7 +1142,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var propertyName = this.interpreterProxy.stackValue(0).asString();
       if(!propertyName) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(1).event;
       if(!event) return false;
       var propertyValue = event[propertyName];
       if(!propertyValue && propertyName === "currentTarget") {
@@ -1154,7 +1154,7 @@ function CpDOMPlugin() {
     },
     "primitiveEventModifiers": function(argCount) {
       if(argCount !== 0) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(0).event;
       if(!event) return false;
       var modifiers =
         (event.altKey ? 1 : 0) +
@@ -1166,14 +1166,14 @@ function CpDOMPlugin() {
     },
     "primitiveEventPreventDefault": function(argCount) {
       if(argCount !== 0) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(0).event;
       if(!event) return false;
       event.preventDefault();
       return this.answerSelf(argCount);
     },
     "primitiveEventStopPropagation": function(argCount) {
       if(argCount !== 0) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(0).event;
       if(!event) return false;
       // Check the current target using the 'backup' value below,
       // because in a throttled event the actual value has become null.
@@ -1184,7 +1184,7 @@ function CpDOMPlugin() {
     },
     "primitiveEventStopImmediatePropagation": function(argCount) {
       if(argCount !== 0) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(0).event;
       if(!event) return false;
       event.stopImmediatePropagation();
       event.__cp_stop_propagation = true;
@@ -1193,7 +1193,7 @@ function CpDOMPlugin() {
     },
     "primitiveEventIsStopped": function(argCount) {
       if(argCount !== 0) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(0).event;
       if(!event) return false;
       // Check the current target using the 'backup' value below,
       // because in a throttled event the actual value has become null.
@@ -1210,12 +1210,32 @@ function CpDOMPlugin() {
       }
       return this.answer(argCount, isStopped);
     },
+    "primitiveEventCopy": function(argCount) {
+      if(argCount !== 0) return false;
+      var event = this.interpreterProxy.stackValue(0).event;
+
+      // Create dummy event object containing only properties (not being functions)
+      let dummyEvent = {};
+      for(key in event) {
+        let value = event[key];
+        if(!value || !value.apply) {
+          dummyEvent[key] = value;
+        }
+      }
+
+      // Create new instance and connect dummy event
+      let eventClass = this.eventClassMap[event.type];
+      let newEvent = this.vm.instantiateClass(eventClass, 0);
+      newEvent.event = dummyEvent;
+
+      return this.amswer(argCount, newEvent);
+    },
 
     // CustomEvent instance methods
     "primitiveCustomEventCreateWithDetail:": function(argCount) {
       if(argCount !== 1) return false;
       var detail = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0));
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       if(receiver.event) return false; // Already created!
       var type = receiver.sqClass.type;
       receiver.event = new CustomEvent(type, { detail: detail, bubbles: true, cancelable: true, composed: true });
@@ -1226,7 +1246,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(1).event;
       if(!event) return false;
       // Dispatch event 'outside' this event handling method (to prevent stack getting out of balance)
       window.setTimeout(function() { domElement.dispatchEvent(event) }, 0);
