@@ -14230,8 +14230,10 @@
         // Check the current target using the 'backup' value below,
         // because in a throttled event the actual value has become null.
         event.stopPropagation();
-        event.__cp_stop_propagation = true;
-        event.__cp_stop_after = event.__cp_current_target;
+        if(!event.__cp_stop_propagation) {
+          event.__cp_stop_propagation = true;
+          event.__cp_stop_after = event.__cp_current_target;
+        }
         return this.answerSelf(argCount);
       },
       "primitiveEventStopImmediatePropagation": function(argCount) {
@@ -14239,8 +14241,10 @@
         var event = this.interpreterProxy.stackValue(0).event;
         if(!event) return false;
         event.stopImmediatePropagation();
-        event.__cp_stop_propagation = true;
-        event.__cp_stop_after = null;
+        if(!event.__cp_stop_propagation) {
+          event.__cp_stop_propagation = true;
+          event.__cp_stop_after = null;
+        }
         return this.answerSelf(argCount);
       },
       "primitiveEventIsStopped": function(argCount) {
@@ -14274,6 +14278,15 @@
             dummyEvent[key] = value;
           }
         }
+
+        // Mark the event stopped
+        dummyEvent.__cp_stop_propagation = true;
+        dummyEvent.__cp_stop_after = null;
+
+        // Add dummy methods
+        dummy.preventDefault = function() {};
+        dummy.stopPropagation = function() {};
+        dummy.stopImmediatePropagation = function() {};
 
         // Create new instance and connect dummy event
         let eventClass = this.eventClassMap[event.type];
