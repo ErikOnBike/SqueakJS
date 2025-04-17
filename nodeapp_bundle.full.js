@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.3",
 	    vmDate: "2024-09-28",               // Maybe replace at build time?
-	    vmBuild: "cp-20250416",                 // or replace at runtime by last-modified?
+	    vmBuild: "cp-20250417",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -14830,29 +14830,25 @@ function requireCpSystemPlugin () {
 	        var activeProcess = thisHandle.scheduler.pointers[Squeak.ProcSched_activeProcess];
 	        var primHandler = thisHandle.primHandler;
 	        if(activeProcess !== process) {
-	          // If activeProcess is a synchronous Process, make sure it gets resumed
-	          // immediately after the new Process has terminated/is suspended.
-	          if(activeProcess.isSync) {
-
-	            // Put this synchronous Process at the front of the relevant Process list,
-	            // so it will be made active during wakeHighestPriority() on suspension
-	            // or termination of the new synchronous Process.
-	            var processList = thisHandle.scheduler.pointers[Squeak.ProcSched_processLists].pointers[thisHandle.syncProcessPriority - 1];
-	            if(primHandler.isEmptyList(processList)) {
-	              processList.pointers[Squeak.LinkedList_lastLink] = activeProcess;
-	            } else {
-	              var firstLink = processList.pointers[Squeak.LinkedList_firstLink];
-	              activeProcess.pointers[Squeak.Link_nextLink] = firstLink;
-	            }
-	            processList.pointers[Squeak.LinkedList_firstLink] = activeProcess;
-	            processList.dirty = true;
-	            activeProcess.pointers[Squeak.Proc_myList] = processList;
-	            activeProcess.dirty = true;
+	          // Make sure the currently active Process is resumed immediately after the
+	          // new Process has terminated/is suspended.
+	          // Put the current Process at the front of the relevant Process list,
+	          // so it will be made active during wakeHighestPriority() on suspension
+	          // or termination of the new synchronous Process.
+	          var priority = activeProcess.pointers[Squeak.Proc_priority];
+	          var processList = thisHandle.scheduler.pointers[Squeak.ProcSched_processLists].pointers[priority - 1];
+	          if(primHandler.isEmptyList(processList)) {
+	            processList.pointers[Squeak.LinkedList_lastLink] = activeProcess;
 	          } else {
-
-	            // Put the (regular) Process to sleep, it will be woken up again later
-	            primHandler.putToSleep(activeProcess);
+	            var firstLink = processList.pointers[Squeak.LinkedList_firstLink];
+	            activeProcess.pointers[Squeak.Link_nextLink] = firstLink;
 	          }
+	          processList.pointers[Squeak.LinkedList_firstLink] = activeProcess;
+	          processList.dirty = true;
+	          activeProcess.pointers[Squeak.Proc_myList] = processList;
+	          activeProcess.dirty = true;
+
+	          // Now transfer control to the new Process to make it active
 	          primHandler.transferTo(process);
 	        }
 
@@ -15797,7 +15793,7 @@ function requireCpSystemPlugin () {
 
 	          // Try selector first, if not present check if a colon is present
 	          // and remove it and every character after it.
-	          // (E.g. setTimeout:duration: is translated into setTimeout)
+	          // (E.g. setTimeout:thenDo: is translated into setTimeout)
 	          var selectorDescription = this.getSelectorNamed(obj, selectorName);
 	          if(!selectorDescription) {
 	            var colonIndex = selectorName.indexOf(":");
@@ -16434,7 +16430,6 @@ function requireCp_interpreter () {
 	        // Create fake display and create interpreter
 	        var display = { vmOptions: [ "-vm-display-null", "-nodisplay" ] };
 	        var vm = new Squeak.Interpreter(image, display);
-	        vm.interpreterIsRunning = false;
 	        vm.interpreterRestartTimeout = null;
 	        vm.runInterpreter = function(restart) {
 
@@ -16455,7 +16450,6 @@ function requireCp_interpreter () {
 	              syncProcess = undefined;
 	            }
 	            vm.isIdle = false;
-	            vm.interpreterIsRunning = true;
 	            var compiled;
 	            if(syncProcess) {
 
@@ -16489,12 +16483,10 @@ function requireCp_interpreter () {
 	            // Stop execution if the idle Process is reached, meaning nothing left to execute.
 	            // New events might awaken an existing Process. The interpreter will be restarted then.
 	            if(vm.interpreterRestartTimeout !== 'defer' && vm.inIdleProcess()) {
-	              vm.interpreterIsRunning = false;
 	              vm.interpreterRestartTimeout = null;
 	            } else {
 
 	              // Restart the interpreter shortly, but give environment some breathing space.
-	              // The is running flag remains up while sleeping.
 	              vm.interpreterRestartTimeout = globalThis.setTimeout(vm.runInterpreter, 10);
 	            }
 	          } catch(e) {
