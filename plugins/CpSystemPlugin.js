@@ -46,29 +46,25 @@ function CpSystemPlugin() {
         var activeProcess = thisHandle.scheduler.pointers[Squeak.ProcSched_activeProcess];
         var primHandler = thisHandle.primHandler;
         if(activeProcess !== process) {
-          // If activeProcess is a synchronous Process, make sure it gets resumed
-          // immediately after the new Process has terminated/is suspended.
-          if(activeProcess.isSync) {
-
-            // Put this synchronous Process at the front of the relevant Process list,
-            // so it will be made active during wakeHighestPriority() on suspension
-            // or termination of the new synchronous Process.
-            var processList = thisHandle.scheduler.pointers[Squeak.ProcSched_processLists].pointers[thisHandle.syncProcessPriority - 1];
-            if(primHandler.isEmptyList(processList)) {
-              processList.pointers[Squeak.LinkedList_lastLink] = activeProcess;
-            } else {
-              var firstLink = processList.pointers[Squeak.LinkedList_firstLink];
-              activeProcess.pointers[Squeak.Link_nextLink] = firstLink;
-            }
-            processList.pointers[Squeak.LinkedList_firstLink] = activeProcess;
-            processList.dirty = true;
-            activeProcess.pointers[Squeak.Proc_myList] = processList;
-            activeProcess.dirty = true;
+          // Make sure the currently active Process is resumed immediately after the
+          // new Process has terminated/is suspended.
+          // Put the current Process at the front of the relevant Process list,
+          // so it will be made active during wakeHighestPriority() on suspension
+          // or termination of the new synchronous Process.
+          var priority = activeProcess.pointers[Squeak.Proc_priority];
+          var processList = thisHandle.scheduler.pointers[Squeak.ProcSched_processLists].pointers[priority - 1];
+          if(primHandler.isEmptyList(processList)) {
+            processList.pointers[Squeak.LinkedList_lastLink] = activeProcess;
           } else {
-
-            // Put the (regular) Process to sleep, it will be woken up again later
-            primHandler.putToSleep(activeProcess);
+            var firstLink = processList.pointers[Squeak.LinkedList_firstLink];
+            activeProcess.pointers[Squeak.Link_nextLink] = firstLink;
           }
+          processList.pointers[Squeak.LinkedList_firstLink] = activeProcess;
+          processList.dirty = true;
+          activeProcess.pointers[Squeak.Proc_myList] = processList;
+          activeProcess.dirty = true;
+
+          // Now transfer control to the new Process to make it active
           primHandler.transferTo(process);
         }
 
@@ -1013,7 +1009,7 @@ function CpSystemPlugin() {
 
           // Try selector first, if not present check if a colon is present
           // and remove it and every character after it.
-          // (E.g. setTimeout:duration: is translated into setTimeout)
+          // (E.g. setTimeout:thenDo: is translated into setTimeout)
           var selectorDescription = this.getSelectorNamed(obj, selectorName);
           if(!selectorDescription) {
             var colonIndex = selectorName.indexOf(":");

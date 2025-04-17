@@ -15,7 +15,6 @@ Object.extend(Squeak,
         // Create fake display and create interpreter
         var display = { vmOptions: [ "-vm-display-null", "-nodisplay" ] };
         var vm = new Squeak.Interpreter(image, display);
-        vm.interpreterIsRunning = false;
         vm.interpreterRestartTimeout = null;
         vm.runInterpreter = function(restart) {
 
@@ -36,7 +35,6 @@ Object.extend(Squeak,
               syncProcess = undefined;
             }
             vm.isIdle = false;
-            vm.interpreterIsRunning = true;
             var compiled;
             if(syncProcess) {
 
@@ -70,12 +68,10 @@ Object.extend(Squeak,
             // Stop execution if the idle Process is reached, meaning nothing left to execute.
             // New events might awaken an existing Process. The interpreter will be restarted then.
             if(vm.interpreterRestartTimeout !== 'defer' && vm.inIdleProcess()) {
-              vm.interpreterIsRunning = false;
               vm.interpreterRestartTimeout = null;
             } else {
 
               // Restart the interpreter shortly, but give environment some breathing space.
-              // The is running flag remains up while sleeping.
               vm.interpreterRestartTimeout = globalThis.setTimeout(vm.runInterpreter, 10);
             }
           } catch(e) {
