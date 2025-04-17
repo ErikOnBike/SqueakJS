@@ -1220,7 +1220,7 @@ function CpDOMPlugin() {
 
       // Create dummy event object containing only properties (not being functions)
       let dummyEvent = {};
-      for(key in event) {
+      for(let key in event) {
         let value = event[key];
         if(!value || !value.apply) {
           dummyEvent[key] = value;
@@ -1232,16 +1232,16 @@ function CpDOMPlugin() {
       dummyEvent.__cp_stop_after = null;
 
       // Add dummy methods
-      dummy.preventDefault = function() {};
-      dummy.stopPropagation = function() {};
-      dummy.stopImmediatePropagation = function() {};
+      dummyEvent.preventDefault = function() {};
+      dummyEvent.stopPropagation = function() {};
+      dummyEvent.stopImmediatePropagation = function() {};
 
       // Create new instance and connect dummy event
       let eventClass = this.eventClassMap[event.type];
       let newEvent = this.vm.instantiateClass(eventClass, 0);
       newEvent.event = dummyEvent;
 
-      return this.amswer(argCount, newEvent);
+      return this.answer(argCount, newEvent);
     },
 
     // CustomEvent instance methods
