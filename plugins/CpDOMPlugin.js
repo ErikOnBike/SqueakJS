@@ -299,6 +299,14 @@ function CpDOMPlugin() {
       if(!domElement) return false;
       return this.answer(argCount, domElement.matches(selector));
     },
+    "primitiveDomElementHost": function(argCount) {
+      if(argCount !== 0) return false;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
+      if(!domElement) return false;
+      var host = domElement.getRootNode().host;	// Is undefined for elements outside a shadow DOM
+      return this.answer(argCount, this.instanceForElement(host));
+    },
+
     "primitiveDomElementParent": function(argCount) {
       if(argCount !== 0) return false;
       var domElement = this.interpreterProxy.stackValue(0).domElement;
@@ -691,14 +699,14 @@ function CpDOMPlugin() {
       var tagName = this.tagNameFromClass(receiver);
       return this.answer(argCount, tagName);
     },
+
+    // WebComponent instance methods
     "primitiveWebComponentShadowRoot": function(argCount) {
       if(argCount !== 0) return false;
       var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, this.instanceForElement(domElement.shadowRoot));
     },
-
-    // WebComponent instance methods
     "primitiveWebComponentTextContent": function(argCount) {
       if(argCount !== 0) return false;
       var domElement = this.interpreterProxy.stackValue(0).domElement;
