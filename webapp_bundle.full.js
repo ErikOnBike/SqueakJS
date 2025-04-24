@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250417",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250424",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -13347,6 +13347,14 @@
         if(!domElement) return false;
         return this.answer(argCount, domElement.matches(selector));
       },
+      "primitiveDomElementHost": function(argCount) {
+        if(argCount !== 0) return false;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
+        if(!domElement) return false;
+        var host = domElement.getRootNode().host;	// Is undefined for elements outside a shadow DOM
+        return this.answer(argCount, this.instanceForElement(host));
+      },
+
       "primitiveDomElementParent": function(argCount) {
         if(argCount !== 0) return false;
         var domElement = this.interpreterProxy.stackValue(0).domElement;
@@ -13739,14 +13747,14 @@
         var tagName = this.tagNameFromClass(receiver);
         return this.answer(argCount, tagName);
       },
+
+      // WebComponent instance methods
       "primitiveWebComponentShadowRoot": function(argCount) {
         if(argCount !== 0) return false;
         var domElement = this.interpreterProxy.stackValue(0).domElement;
         if(!domElement) return false;
         return this.answer(argCount, this.instanceForElement(domElement.shadowRoot));
       },
-
-      // WebComponent instance methods
       "primitiveWebComponentTextContent": function(argCount) {
         if(argCount !== 0) return false;
         var domElement = this.interpreterProxy.stackValue(0).domElement;
