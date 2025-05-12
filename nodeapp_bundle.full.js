@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.3",
 	    vmDate: "2024-09-28",               // Maybe replace at build time?
-	    vmBuild: "cp-20250417",                 // or replace at runtime by last-modified?
+	    vmBuild: "cp-20250512",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -15353,11 +15353,6 @@ function requireCpSystemPlugin () {
 	      this.vm.setIdleProcess(receiver);
 	      return this.answerSelf(argCount);
 	    },
-	    "primitiveProcessIsSyncProcess": function(argCount) {
-	      if(argCount !== 0) return false;
-	      var receiver = this.interpreterProxy.stackValue(0);
-	      return this.answer(argCount, !!receiver.isSync);
-	    },
 	    "primitiveProcessAllowAwaitPromise": function(argCount) {
 	      if(argCount !== 0) return false;
 	      var receiver = this.interpreterProxy.stackValue(0);
@@ -15517,41 +15512,6 @@ function requireCpSystemPlugin () {
 	    },
 
 	    // String instance methods
-	    skipDelimiters: function(src, delimiters, from) {
-	      for(;from < src.length; from++) {
-	        if(delimiters.indexOf(src[from]) < 0) {
-	          return from;
-	        }
-	      }
-	      return src.length + 1;
-	    },
-	    findDelimiters: function(src, delimiters, from) {
-	      for(;from < src.length; from++) {
-	        if(delimiters.indexOf(src[from]) >= 0) {
-	          return from;
-	        }
-	      }
-	      return src.length + 1;
-	    },
-	    createSubstring: function(src, start, end) {
-	      var substring = src.slice(start, end);
-	      var isWideString = substring.some(function(charValue) { return charValue >= 256; });
-	      var newString = this.vm.instantiateClass(isWideString ? this.wideStringClass : this.byteStringClass, substring.length);
-	      var dst = newString.bytes || newString.words || [];
-	      for(var i = 0; i < substring.length; i++) {
-	        dst[i] = substring[i];
-	      }
-	      return newString;
-	    },
-	    stringHash: function(src) {
-	      var hash = 0x3400; // Initial value ByteString hash
-	      for(var i = 0; i < src.length; i++) {
-	        hash = hash + src[i];
-	        var low = hash & 0x3fff;
-	        hash = (0x260d * low + ((0x260d * Math.floor(hash / 0x4000) + (0x0065 * low) & 0x3fff) * 0x4000)) & 0xfffffff;
-	      }
-	      return hash;
-	    },
 	    "primitiveStringConcatenate:": function(argCount) {
 	      if(argCount !== 1) return false;
 	      var receiver = this.interpreterProxy.stackValue(1);
@@ -15691,6 +15651,43 @@ function requireCpSystemPlugin () {
 	      if(argCount !== 0) return false;
 	      var src = this.interpreterProxy.stackValue(0).asString();
 	      return this.answer(argCount, src.trimEnd());
+	    },
+
+	    // String helper methods
+	    skipDelimiters: function(src, delimiters, from) {
+	      for(;from < src.length; from++) {
+	        if(delimiters.indexOf(src[from]) < 0) {
+	          return from;
+	        }
+	      }
+	      return src.length + 1;
+	    },
+	    findDelimiters: function(src, delimiters, from) {
+	      for(;from < src.length; from++) {
+	        if(delimiters.indexOf(src[from]) >= 0) {
+	          return from;
+	        }
+	      }
+	      return src.length + 1;
+	    },
+	    createSubstring: function(src, start, end) {
+	      var substring = src.slice(start, end);
+	      var isWideString = substring.some(function(charValue) { return charValue >= 256; });
+	      var newString = this.vm.instantiateClass(isWideString ? this.wideStringClass : this.byteStringClass, substring.length);
+	      var dst = newString.bytes || newString.words || [];
+	      for(var i = 0; i < substring.length; i++) {
+	        dst[i] = substring[i];
+	      }
+	      return newString;
+	    },
+	    stringHash: function(src) {
+	      var hash = 0x3400; // Initial value ByteString hash
+	      for(var i = 0; i < src.length; i++) {
+	        hash = hash + src[i];
+	        var low = hash & 0x3fff;
+	        hash = (0x260d * low + ((0x260d * Math.floor(hash / 0x4000) + (0x0065 * low) & 0x3fff) * 0x4000)) & 0xfffffff;
+	      }
+	      return hash;
 	    },
 
 	    // WideString class methods
@@ -16486,8 +16483,8 @@ function requireCp_interpreter () {
 	              vm.interpreterRestartTimeout = null;
 	            } else {
 
-	              // Restart the interpreter shortly, but give environment some breathing space.
-	              vm.interpreterRestartTimeout = globalThis.setTimeout(vm.runInterpreter, 10);
+	              // Restart the interpreter (but allow Browser to perform any required rendering)
+	              vm.interpreterRestartTimeout = globalThis.setTimeout(vm.runInterpreter, 0);
 	            }
 	          } catch(e) {
 	            console.error("Failure during Squeak run: ", e);
