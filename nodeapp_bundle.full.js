@@ -16055,7 +16055,12 @@ function requireCpSystemPlugin () {
 	      var receiver = this.interpreterProxy.stackValue(0);
 	      var jsFunc = receiver.jsObj;
 	      if(!jsFunc) return false;
-	      return this.answer(argCount, jsFunc());
+	      try {
+	        return this.answer(argCount, jsFunc());
+	      } catch(e) {
+	        this.lastException = e;
+	        return false;
+	      }
 	    },
 	    "primitiveJavaScriptFunctionValue:": function(argCount) {
 	      if(argCount !== 1) return false;
@@ -16063,7 +16068,12 @@ function requireCpSystemPlugin () {
 	      var arg = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
 	      var jsFunc = receiver.jsObj;
 	      if(!jsFunc) return false;
-	      return this.answer(argCount, jsFunc(arg));
+	      try {
+	        return this.answer(argCount, jsFunc(arg));
+	      } catch(e) {
+	        this.lastException = e;
+	        return false;
+	      }
 	    },
 	    "primitiveJavaScriptFunctionValue:value:": function(argCount) {
 	      if(argCount !== 2) return false;
@@ -16072,7 +16082,12 @@ function requireCpSystemPlugin () {
 	      var arg2 = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
 	      var jsFunc = receiver.jsObj;
 	      if(!jsFunc) return false;
-	      return this.answer(argCount, jsFunc(arg1, arg2));
+	      try {
+	        return this.answer(argCount, jsFunc(arg1, arg2));
+	      } catch(e) {
+	        this.lastException = e;
+	        return false;
+	      }
 	    },
 	    "primitiveJavaScriptFunctionValue:value:value:": function(argCount) {
 	      if(argCount !== 3) return false;
@@ -16082,7 +16097,12 @@ function requireCpSystemPlugin () {
 	      var arg3 = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
 	      var jsFunc = receiver.jsObj;
 	      if(!jsFunc) return false;
-	      return this.answer(argCount, jsFunc(arg1, arg2, arg3));
+	      try {
+	        return this.answer(argCount, jsFunc(arg1, arg2, arg3));
+	      } catch(e) {
+	        this.lastException = e;
+	        return false;
+	      }
 	    },
 	    "primitiveJavaScriptFunctionValueWithArguments:": function(argCount) {
 	      if(argCount !== 1) return false;
@@ -16090,7 +16110,12 @@ function requireCpSystemPlugin () {
 	      var args = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
 	      var jsFunc = receiver.jsObj;
 	      if(!jsFunc) return false;
-	      return this.answer(argCount, jsFunc(...args));
+	      try {
+	        return this.answer(argCount, jsFunc(...args));
+	      } catch(e) {
+	        this.lastException = e;
+	        return false;
+	      }
 	    },
 
 	    // JavaScriptPromise instance methods
