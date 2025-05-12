@@ -569,6 +569,11 @@ function CpSystemPlugin() {
       this.vm.setIdleProcess(receiver);
       return this.answerSelf(argCount);
     },
+    "primitiveProcessIsSyncProcess": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      return this.answer(argCount, !!receiver.isSync);
+    },
     "primitiveProcessAllowAwaitPromise": function(argCount) {
       if(argCount !== 0) return false;
       var receiver = this.interpreterProxy.stackValue(0);
