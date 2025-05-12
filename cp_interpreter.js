@@ -71,8 +71,8 @@ Object.extend(Squeak,
               vm.interpreterRestartTimeout = null;
             } else {
 
-              // Restart the interpreter shortly, but give environment some breathing space.
-              vm.interpreterRestartTimeout = globalThis.setTimeout(vm.runInterpreter, 10);
+              // Restart the interpreter (but allow Browser to perform any required rendering)
+              vm.interpreterRestartTimeout = globalThis.setTimeout(vm.runInterpreter, 0);
             }
           } catch(e) {
             console.error("Failure during Squeak run: ", e);
