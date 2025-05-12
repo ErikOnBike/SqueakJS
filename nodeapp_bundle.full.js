@@ -15353,6 +15353,11 @@ function requireCpSystemPlugin () {
 	      this.vm.setIdleProcess(receiver);
 	      return this.answerSelf(argCount);
 	    },
+	    "primitiveProcessIsSyncProcess": function(argCount) {
+	      if(argCount !== 0) return false;
+	      var receiver = this.interpreterProxy.stackValue(0);
+	      return this.answer(argCount, !!receiver.isSync);
+	    },
 	    "primitiveProcessAllowAwaitPromise": function(argCount) {
 	      if(argCount !== 0) return false;
 	      var receiver = this.interpreterProxy.stackValue(0);
@@ -16044,6 +16049,48 @@ function requireCpSystemPlugin () {
 	        jsFunc.__cp_func_result = result;
 	      }
 	      return this.answerSelf(argCount);
+	    },
+	    "primitiveJavaScriptFunctionValue": function(argCount) {
+	      if(argCount !== 0) return false;
+	      var receiver = this.interpreterProxy.stackValue(0);
+	      var jsFunc = receiver.jsObj;
+	      if(!jsFunc) return false;
+	      return this.answer(argCount, jsFunc());
+	    },
+	    "primitiveJavaScriptFunctionValue:": function(argCount) {
+	      if(argCount !== 1) return false;
+	      var receiver = this.interpreterProxy.stackValue(1);
+	      var arg = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+	      var jsFunc = receiver.jsObj;
+	      if(!jsFunc) return false;
+	      return this.answer(argCount, jsFunc(arg));
+	    },
+	    "primitiveJavaScriptFunctionValue:value:": function(argCount) {
+	      if(argCount !== 2) return false;
+	      var receiver = this.interpreterProxy.stackValue(2);
+	      var arg1 = this.asJavaScriptObject(this.interpreterProxy.stackValue(1));
+	      var arg2 = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+	      var jsFunc = receiver.jsObj;
+	      if(!jsFunc) return false;
+	      return this.answer(argCount, jsFunc(arg1, arg2));
+	    },
+	    "primitiveJavaScriptFunctionValue:value:value:": function(argCount) {
+	      if(argCount !== 3) return false;
+	      var receiver = this.interpreterProxy.stackValue(3);
+	      var arg1 = this.asJavaScriptObject(this.interpreterProxy.stackValue(2));
+	      var arg2 = this.asJavaScriptObject(this.interpreterProxy.stackValue(1));
+	      var arg3 = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+	      var jsFunc = receiver.jsObj;
+	      if(!jsFunc) return false;
+	      return this.answer(argCount, jsFunc(arg1, arg2, arg3));
+	    },
+	    "primitiveJavaScriptFunctionValueWithArguments:": function(argCount) {
+	      if(argCount !== 1) return false;
+	      var receiver = this.interpreterProxy.stackValue(1);
+	      var args = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+	      var jsFunc = receiver.jsObj;
+	      if(!jsFunc) return false;
+	      return this.answer(argCount, jsFunc(...args));
 	    },
 
 	    // JavaScriptPromise instance methods
