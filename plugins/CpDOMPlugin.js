@@ -795,6 +795,10 @@ function CpDOMPlugin() {
               }
             }
           }
+          connectedCallback() {
+            var component = this;
+            window.setTimeout(function() { component.dispatchEvent(new Event("connected")) }, 0);
+          }
         };
 
         // Keep track of custom class
