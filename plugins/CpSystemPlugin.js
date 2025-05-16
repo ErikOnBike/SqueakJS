@@ -464,15 +464,14 @@ function CpSystemPlugin() {
 
       // Create the JavaScript function which executes the Context
       var thisHandle = this;
-      var func = function() {
+      var func = function(...args) {
 
         // Create a copy of the Context to allow executing it multiple times.
         var context = thisHandle.vm.image.clone(obj);
 
         // Register the function arguments with the function.
         // This is used by JavaScriptFunction >> #arguments.
-        var funcArgs = Array.from(arguments);
-        var blockArgs = funcArgs.map(function(each) {
+        var blockArgs = args.map(function(each) {
           return thisHandle.primHandler.makeStObject(each);
         });
         func.__cp_func_arguments = blockArgs;

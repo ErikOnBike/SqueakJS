@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.2.3",
 	    vmDate: "2024-09-28",               // Maybe replace at build time?
-	    vmBuild: "cp-20250512",                 // or replace at runtime by last-modified?
+	    vmBuild: "cp-20250516",                 // or replace at runtime by last-modified?
 	    vmPath: "unknown",                  // Replace at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -15248,15 +15248,14 @@ function requireCpSystemPlugin () {
 
 	      // Create the JavaScript function which executes the Context
 	      var thisHandle = this;
-	      var func = function() {
+	      var func = function(...args) {
 
 	        // Create a copy of the Context to allow executing it multiple times.
 	        var context = thisHandle.vm.image.clone(obj);
 
 	        // Register the function arguments with the function.
 	        // This is used by JavaScriptFunction >> #arguments.
-	        var funcArgs = Array.from(arguments);
-	        var blockArgs = funcArgs.map(function(each) {
+	        var blockArgs = args.map(function(each) {
 	          return thisHandle.primHandler.makeStObject(each);
 	        });
 	        func.__cp_func_arguments = blockArgs;
@@ -16632,7 +16631,7 @@ class SessionStorage {
     });
 
     // Set environment version (monotonic increasing counter, expecting exact match on server)
-    this.storage["CLIENT_VERSION"] = "6";
+    this.storage["CLIENT_VERSION"] = "7";
   }
   getItem(name) {
     return this.storage[name];

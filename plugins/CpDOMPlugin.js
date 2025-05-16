@@ -672,18 +672,69 @@ function CpDOMPlugin() {
     },
 
     // WebComponent class methods
-    "primitiveWebComponentRegister": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(0);
+    "primitiveWebComponentRegisterWithInitialize:thirdParty:": function(argCount) {
+      if(argCount !== 2) return false;
+      var receiver = this.interpreterProxy.stackValue(2);
       if(receiver.customTag !== undefined) {
         console.error("Registering a WebComponent which already has a custom tag: " + receiver.customTag);
         return false;
       }
 
+      var hasInitialize = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(1)) === true;
+      var isThirdParty = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0)) === true;
+
       // Keep track of custom tag and Smalltalk class
       var customTag = this.tagNameFromClass(receiver);
       receiver.customTag = customTag;
       this.customTagMap[customTag] = receiver;
+
+      // Create WebComponent constructor if not from a third-party (JS WebComponent already exists)
+      var thisHandle = this;
+      if(!isThirdParty) {
+
+        // Create custom class and register it
+        try {
+          var customClass = class extends HTMLElement {
+            constructor(skipInitialize) {
+              super();
+              thisHandle.ensureShadowRoot(receiver, this);
+
+              // Upgrade the shadow DOM so all constructors are called for nested WebComponents.
+              // Doing this before the following initialization means, children are initialized
+              // before the parent. This seems logical because the nested elements can then be
+              // used from the parent (which defined its children, so expects them to be there).
+              window.customElements.upgrade(this.shadowRoot);
+
+              if(skipInitialize !== true && hasInitialize) {
+                // Because WebComponents should not access their children during construction,
+                // add the new instance to the list of pending elements and perform initialization
+                // deferred (until the next tick).
+                thisHandle.elementsToInitialize.push(this);
+                if(!thisHandle.initializeRunner) {
+                  thisHandle.initializeRunner = window.setTimeout(function() {
+                    thisHandle.initializePendingElements();
+                  }, 0);
+                }
+              }
+            }
+            connectedCallback() {
+              var component = this;
+              window.setTimeout(function() { component.dispatchEvent(new Event("connected")) }, 0);
+            }
+            disconnectedCallback() {
+              var component = this;
+              window.setTimeout(function() { component.dispatchEvent(new Event("disconnected")) }, 0);
+            }
+          };
+
+          // Keep track of custom class
+          window.customElements.define(customTag, customClass);
+          customClass.stClass = receiver;
+        } catch(e) {
+          console.error("Failed to create new custom element with tag " + receiver.customTag, e);
+          return false;
+        }
+      }
 
       return this.answerSelf(argCount);
     },
@@ -761,56 +812,6 @@ function CpDOMPlugin() {
     },
 
     // TemplateComponent class methods
-    "primitiveTemplateComponentRegisterStyleAndTemplate": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(0);
-      if(receiver.customTag === undefined) {
-        console.error("Registering a TemplateComponent without a custom tag");
-        return false;
-      }
-
-      // Create custom class and register it
-      var thisHandle = this;
-      try {
-        var customClass = class extends HTMLElement {
-          constructor(skipInitialize) {
-            super();
-            thisHandle.ensureShadowRoot(receiver, this);
-
-            // Upgrade the shadow DOM so all constructors are called for nested WebComponents.
-            // Doing this before the following initialization means, children are initialized
-            // before the parent. This seems logical because the nested elements can then be
-            // used from the parent (which defined its children, so expects them to be there).
-            window.customElements.upgrade(this.shadowRoot);
-
-            if(skipInitialize !== true) {
-              // Because WebComponents should not access their children during construction,
-              // add the new instance to the list of pending elements and perform initialization
-              // deferred (until the next tick).
-              thisHandle.elementsToInitialize.push(this);
-              if(!thisHandle.initializeRunner) {
-                thisHandle.initializeRunner = window.setTimeout(function() {
-                  thisHandle.initializePendingElements();
-                }, 0);
-              }
-            }
-          }
-          connectedCallback() {
-            var component = this;
-            window.setTimeout(function() { component.dispatchEvent(new Event("connected")) }, 0);
-          }
-        };
-
-        // Keep track of custom class
-        window.customElements.define(receiver.customTag, customClass);
-        customClass.stClass = receiver;
-      } catch(e) {
-        console.error("Failed to create new custom element with tag " + receiver.customTag, e);
-        return false;
-      }
-
-      return this.answerSelf(argCount);
-    },
     "primitiveTemplateComponentInstallStyle:andTemplate:": function(argCount) {
       if(argCount !== 2) return false;
       var styleString = this.interpreterProxy.stackValue(1).asString();
@@ -935,9 +936,9 @@ function CpDOMPlugin() {
           var removeElement = element;
           element = element.nextElementSibling;
           removeElement.remove();
-	} else {
+        } else {
           element = element.nextElementSibling;
-	}
+        }
       }
 
       // Set new content using a copy of the template to prevent changes (by others) to persist.
