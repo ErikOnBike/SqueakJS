@@ -13705,6 +13705,16 @@
         domElement.insertBefore(childElement, siblingElement);
         return this.answer(argCount, childInstance);
       },
+      "primitiveDomElementReplaceWith:": function(argCount) {
+        if(argCount !== 1) return false;
+        var replacementInstance = this.interpreterProxy.stackValue(0);
+        var replacementElement = replacementInstance.domElement;
+        if(!replacementElement) return false;
+        var domElement = this.interpreterProxy.stackValue(1).domElement;
+        if(!domElement) return false;
+        domElement.replaceWith(replacementElement);
+        return this.answer(argCount, replacementInstance);
+      },
       "primitiveDomElementReplaceChild:with:": function(argCount) {
         if(argCount !== 2) return false;
         var childElement = this.interpreterProxy.stackValue(1).domElement;
