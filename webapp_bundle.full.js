@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250516",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250605",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -12223,28 +12223,13 @@
       },
       "primitiveStringAsNumber": function(argCount) {
         if(argCount !== 0) return false;
-        var numberString = this.interpreterProxy.stackValue(0).asString();
-        var result = null;
-        if(numberString === "NaN") {
-          result = Number.NaN;
-        } else if(numberString === "Infinity") {
-          result = Number.POSITIVE_INFINITY;
-        } else if(numberString === "-Infinity") {
-          result = Number.NEGATIVE_INFINITY;
-        } else {
-          var numberMatch = numberString.match(/^(\d+r)?(-?\d+(?:\.\d+)?(?:e-?\d)?)$/);
-          if(numberMatch) {
-            if(numberMatch[1]) {
-              // Currently only support for base/radix when using integers (not floats)
-              var base = Number.parseInt(numberMatch[1]);
-              if(base >= 2 && base <= 36 && numberMatch[2].indexOf(".") < 0 && numberMatch[2].indexOf("e") < 0) {
-                result = Number.parseInt(numberMatch[2], base);
-              }
-            } else {
-              result = +numberMatch[2];
-            }
-          }
-        }
+        var result = this.stringToNumber(this.interpreterProxy.stackValue(0).asString(), true);
+        if(result === null) return false;
+        return this.answer(argCount, result);
+      },
+      "primitiveStringAsNumberOrNil": function(argCount) {
+        if(argCount !== 0) return false;
+        var result = this.stringToNumber(this.interpreterProxy.stackValue(0).asString(), false);
         if(result === null) return false;
         return this.answer(argCount, result);
       },
@@ -12335,6 +12320,34 @@
           hash = (0x260d * low + ((0x260d * Math.floor(hash / 0x4000) + (0x0065 * low) & 0x3fff) * 0x4000)) & 0xfffffff;
         }
         return hash;
+      },
+      stringToNumber: function(numberString, allowRadix) {
+        if(numberString === "NaN") {
+          return Number.NaN;
+        } else if(numberString === "Infinity") {
+          return Number.POSITIVE_INFINITY;
+        } else if(numberString === "-Infinity") {
+          return Number.NEGATIVE_INFINITY;
+        } else {
+          var numberMatch = numberString.match(/^(\d+r)?(-?\d+(?:\.\d+)?(?:e-?\d)?)$/);
+          if(numberMatch) {
+            if(numberMatch[1]) {
+              // Fail if radix is not allowed
+              if(!allowRadix) {
+                return null;
+              }
+
+              // Currently only support for base/radix when using integers (not floats)
+              var base = Number.parseInt(numberMatch[1]);
+              if(base >= 2 && base <= 36 && numberMatch[2].indexOf(".") < 0 && numberMatch[2].indexOf("e") < 0) {
+                return Number.parseInt(numberMatch[2], base);
+              }
+            } else {
+              return +numberMatch[2];
+            }
+          }
+        }
+        return null;
       },
 
       // WideString class methods
