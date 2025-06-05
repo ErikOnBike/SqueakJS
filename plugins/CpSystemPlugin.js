@@ -805,7 +805,7 @@ function CpSystemPlugin() {
       var result = this.stringToNumber(this.interpreterProxy.stackValue(0).asString(), false);
       if(result === null) return false;
       return this.answer(argCount, result);
-    }
+    },
     "primitiveStringFindTokens:": function(argCount) {
       if(argCount !== 1) return false;
       var receiver = this.interpreterProxy.stackValue(1);
