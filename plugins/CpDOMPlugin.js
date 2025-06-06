@@ -850,6 +850,7 @@ function CpDOMPlugin() {
       // Retrieve templateElement
       var templateElement = webComponentClass.templateElement;
       if(!templateElement) {
+        // Abstract classes don't have a template nor style attached
         return;
       }
 
@@ -930,6 +931,10 @@ function CpDOMPlugin() {
     },
     renderAllInstances: function(webComponentClass) {
       var templateElement = webComponentClass.templateElement;
+      if(!templateElement) {
+        // Abstract classes don't have a template nor style attached
+        return;
+      }
       var thisHandle = this;
       this.allInstancesDo(webComponentClass, window.document, function(instance) {
         thisHandle.renderTemplateOnElement(webComponentClass, templateElement, instance);
@@ -961,6 +966,10 @@ function CpDOMPlugin() {
     },
     styleAllInstances: function(webComponentClass) {
       var templateElement = webComponentClass.templateElement;
+      if(!templateElement) {
+        // Abstract classes don't have a template nor style attached
+        return;
+      }
       var styleSelector = "#cp-css--" + webComponentClass.customTag;
       var styleElement = templateElement.querySelector(styleSelector);
       if(!styleElement) {
