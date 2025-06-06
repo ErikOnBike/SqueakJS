@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250605",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250606",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -13979,6 +13979,7 @@
         // Retrieve templateElement
         var templateElement = webComponentClass.templateElement;
         if(!templateElement) {
+          // Abstract classes don't have a template nor style attached
           return;
         }
 
@@ -14059,6 +14060,10 @@
       },
       renderAllInstances: function(webComponentClass) {
         var templateElement = webComponentClass.templateElement;
+        if(!templateElement) {
+          // Abstract classes don't have a template nor style attached
+          return;
+        }
         var thisHandle = this;
         this.allInstancesDo(webComponentClass, window.document, function(instance) {
           thisHandle.renderTemplateOnElement(webComponentClass, templateElement, instance);
@@ -14090,6 +14095,10 @@
       },
       styleAllInstances: function(webComponentClass) {
         var templateElement = webComponentClass.templateElement;
+        if(!templateElement) {
+          // Abstract classes don't have a template nor style attached
+          return;
+        }
         var styleSelector = "#cp-css--" + webComponentClass.customTag;
         var styleElement = templateElement.querySelector(styleSelector);
         if(!styleElement) {
