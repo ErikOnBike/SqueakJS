@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250606",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250608",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -13983,21 +13983,33 @@
           return;
         }
 
-        // Create new style node from specified styleString
-        var newStyleNode = window.document.createElement("style");
-        newStyleNode.id = "cp-css--" + webComponentClass.customTag;
-        newStyleNode.textContent = webComponentClass.style;
+        // Select old style element
+        var styleElementId = "cp-css--" + webComponentClass.customTag;
+        var oldStyleElement = templateElement.getElementById(styleElementId);
+
+        // If new style is empty, only remove old style and we're done
+        var style = webComponentClass.style.trim();
+        if(!style) {
+          if(oldStyleElement) {
+            oldStyleElement.remove();
+          }
+          return;
+        }
+
+        // Create new style element from specified styleString
+        var newStyleElement = window.document.createElement("style");
+        newStyleElement.id = styleElementId;
+        newStyleElement.textContent = style;
 
         // Replace existing styles or add new styles
-        var oldStyleNode = templateElement.querySelector("#" + newStyleNode.id);
-        if(oldStyleNode) {
+        if(oldStyleElement) {
 
           // Existing styles are replaced
-          oldStyleNode.parentNode.replaceChild(newStyleNode, oldStyleNode);
+          oldStyleElement.parentNode.replaceChild(newStyleElement, oldStyleElement);
         } else {
 
           // Insert the style to become the first element of the template
-          templateElement.insertBefore(newStyleNode, templateElement.firstElementChild);
+          templateElement.insertBefore(newStyleElement, templateElement.firstElementChild);
         }
       },
       "primitiveTemplateComponentInstallTemplate:": function(argCount) {
@@ -14010,7 +14022,7 @@
       },
       installTemplate: function(webComponentClass, template) {
 
-        // Create template node from specified template (String).
+        // Create template element from specified template (String).
         // The DOM parser is very forgiving, so no need for try/catch here.
         // Parsing will NOT result in calling the actual constructor of any
         // nested WebComponents. Only when adding them to the live DOM or by
@@ -14032,7 +14044,7 @@
           delete this.nestedTags[webComponentClass.customTag];
         }
 
-        // Store the template node and update style (which is element within templateElement)
+        // Store the template element and update style (which is element within templateElement)
         webComponentClass.templateElement = templateElement;
         this.installStyleInTemplate(webComponentClass);
       },
@@ -14099,32 +14111,33 @@
           // Abstract classes don't have a template nor style attached
           return;
         }
-        var styleSelector = "#cp-css--" + webComponentClass.customTag;
-        var styleElement = templateElement.querySelector(styleSelector);
-        if(!styleElement) {
-          console.warn("Styling all instance of <" + webComponentClass.customTag + ">, but no style present");
-          return;
-        }
-        var styleContent = styleElement.textContent;
+        var styleElementId = "cp-css--" + webComponentClass.customTag;
+        var styleElement = templateElement.getElementById(styleElementId);
+        var styleContent = styleElement ? styleElement.textContent : null;
         var thisHandle = this;
         this.allInstancesDo(webComponentClass, window.document, function(instance) {
-          thisHandle.updateStyleOnElement(styleContent, styleSelector, instance);
+          thisHandle.updateStyleOnElement(styleContent, styleElementId, instance);
         });
       },
-      updateStyleOnElement: function(style, styleSelector, element) {
-        var styleElement = element.shadowRoot.querySelector(styleSelector);
+      updateStyleOnElement: function(style, styleElementId, element) {
+        var styleElement = element.shadowRoot.getElementById(styleElementId);
         if(styleElement) {
+          if(style) {
 
-          // Update existing style
-          styleElement.textContent = style;
-        } else {
+            // Update existing style
+            styleElement.textContent = style;
+          } else {
+
+            // Remove old style
+            styleElement.remove();
+          }
+        } else if(style) {
 
           // Insert new style to become the first element in the shadow DOM
-          // (this should normally not happen, every element should have a style)
-          var newStyleNode = window.document.createElement("style");
-          newStyleNode.id = styleSelector.slice(1);	// Remove '#'
-          newStyleNode.textContent = style;
-          element.insertBefore(newStyleNode, element.firstElementChild);
+          var newStyleElement = window.document.createElement("style");
+          newStyleElement.id = styleElementId;
+          newStyleElement.textContent = style;
+          element.insertBefore(newStyleElement, element.firstElementChild);
         }
       },
 
