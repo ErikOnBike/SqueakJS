@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.2.3",
       vmDate: "2024-09-28",               // Maybe replace at build time?
-      vmBuild: "cp-20250608",                 // or replace at runtime by last-modified?
+      vmBuild: "cp-20250609",                 // or replace at runtime by last-modified?
       vmPath: "unknown",                  // Replace at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -13714,7 +13714,7 @@
         var siblingElement = this.interpreterProxy.stackValue(0).domElement;
         if(!siblingElement) return false;
         var domElement = this.interpreterProxy.stackValue(2).domElement;
-        if(!domElement || siblingElement.parentElement !== domElement) return false;
+        if(!domElement || siblingElement.parentNode !== domElement) return false;
         domElement.insertBefore(childElement, siblingElement);
         return this.answer(argCount, childInstance);
       },
@@ -13736,7 +13736,7 @@
         var replacementElement = replacementInstance.domElement;
         if(!replacementElement) return false;
         var domElement = this.interpreterProxy.stackValue(2).domElement;
-        if(!domElement || childElement.parentElement !== domElement) return false;
+        if(!domElement || childElement.parentNode !== domElement) return false;
         domElement.replaceChild(replacementElement, childElement);
         return this.answer(argCount, replacementInstance);
       },
@@ -13747,7 +13747,7 @@
         if(!childElement) return false;
         var domElement = this.interpreterProxy.stackValue(1).domElement;
         if(!domElement) return false;
-        if(childElement.parentElement !== domElement) return false;
+        if(childElement.parentNode !== domElement) return false;
         domElement.removeChild(childElement);
         return this.answer(argCount, childInstance);
       },
