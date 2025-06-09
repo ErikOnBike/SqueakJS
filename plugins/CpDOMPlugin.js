@@ -585,7 +585,7 @@ function CpDOMPlugin() {
       var siblingElement = this.interpreterProxy.stackValue(0).domElement;
       if(!siblingElement) return false;
       var domElement = this.interpreterProxy.stackValue(2).domElement;
-      if(!domElement || siblingElement.parentElement !== domElement) return false;
+      if(!domElement || siblingElement.parentNode !== domElement) return false;
       domElement.insertBefore(childElement, siblingElement);
       return this.answer(argCount, childInstance);
     },
@@ -607,7 +607,7 @@ function CpDOMPlugin() {
       var replacementElement = replacementInstance.domElement;
       if(!replacementElement) return false;
       var domElement = this.interpreterProxy.stackValue(2).domElement;
-      if(!domElement || childElement.parentElement !== domElement) return false;
+      if(!domElement || childElement.parentNode !== domElement) return false;
       domElement.replaceChild(replacementElement, childElement);
       return this.answer(argCount, replacementInstance);
     },
@@ -618,7 +618,7 @@ function CpDOMPlugin() {
       if(!childElement) return false;
       var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
-      if(childElement.parentElement !== domElement) return false;
+      if(childElement.parentNode !== domElement) return false;
       domElement.removeChild(childElement);
       return this.answer(argCount, childInstance);
     },
