@@ -2948,7 +2948,7 @@ function requireVm () {
 	if (hasRequiredVm) return vm;
 	hasRequiredVm = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -2972,17 +2972,18 @@ function requireVm () {
 	Object.extend(Squeak,
 	"version", {
 	    // system attributes
-	    vmVersion: "SqueakJS 1.2.3",
-	    vmDate: "2024-09-28",               // Maybe replace at build time?
-	    vmBuild: "cp-20250605",                 // or replace at runtime by last-modified?
-	    vmPath: "unknown",                  // Replace at runtime
+	    vmVersion: "SqueakJS 1.3.3",
+	    vmDate: "2025-06-03",               // Maybe replace at build time?
+	    vmBuild: "cp-20251005",                 // this too?
+	    vmPath: "unknown",                  // Replaced at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
 	    vmInterpreterVersion: "JSInterpreter VMMaker.js-codefrau.1", // for Smalltalk interpreterVMMakerVersion
 	    platformName: "JS",
-	    platformSubtype: "unknown",         // Replace at runtime
-	    osVersion: "unknown",               // Replace at runtime
-	    windowSystem: "unknown",            // Replace at runtime
+	    platformSubtype: "unknown",         // Replaced at runtime
+	    osVersion: "unknown",               // Replaced at runtime
+	    windowSystem: "unknown",            // Replaced at runtime
+	    defaultCORSProxy: "https://cors.codefrau.workers.dev/",
 	},
 	"object header", {
 	    // object headers
@@ -3126,9 +3127,9 @@ function requireVm () {
 	    
 	},
 	"constants", {
+	    MinSmallInt: -1073741824,
 	    
-	    
-	               // non-small and neg (so non pos32 too)
+	    NonSmallInt: -1342177280,           // non-small and neg (so non pos32 too)
 	    
 	},
 	"error codes", {
@@ -3195,7 +3196,7 @@ function requireVm_object () {
 	if (hasRequiredVm_object) return vm_object;
 	hasRequiredVm_object = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -3766,7 +3767,7 @@ function requireVm_object_spur () {
 	if (hasRequiredVm_object_spur) return vm_object_spur;
 	hasRequiredVm_object_spur = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -3939,7 +3940,7 @@ function requireVm_object_spur () {
 	            } else if ((oop & 1) === 1) {          // SmallInteger
 	                if (is64Bit) {
 	                    // if it fits in a 31 bit SmallInt ...
-	                    ptrs[i] = (oop >= 0 ? oop <= 0x1FFFFFFFF : oop >= -0x200000000)
+	                    ptrs[i] = (oop >= 0 ? oop <= 0x1FFFFFFFF : oop >= -8589934592)
 	                        ? oop / 4 >> 1  // ... then convert directly, otherwise make large
 	                        : is64Bit.makeLargeFromSmall((oop - (oop >>> 0)) / 0x100000000 >>> 0, oop >>> 0);
 	                } else ptrs[i] = oop >> 1;
@@ -3988,7 +3989,7 @@ function requireVm_object_spur () {
 	        var words64 = 0;
 	        if (this._format <= 5) {
 	            // pointer objects
-	            overhead = bits.length & ~1; // each oop occupied 2 words instead of 1 ...
+	            overhead = bits.length & -2; // each oop occupied 2 words instead of 1 ...
 	            // ... but odd lengths get padded so we subtract 1
 	            // words32 === words64 because same number of oops
 	        } else if (this._format >= 24) {
@@ -3999,7 +4000,7 @@ function requireVm_object_spur () {
 	            var oddBytes = this._format >= 28;
 	            // ... odd-word lengths would get padded so we subtract 1,
 	            // but if there is also odd-word bytecodes it cancels out so we save 1 word instead
-	            if (oddOops) overhead += oddBytes ? +1 : -1;
+	            if (oddOops) overhead += oddBytes ? 1 : -1;
 	            words64 = bits.length / 2;
 	            words32 = bits.length - overhead;
 	        } else {
@@ -4234,7 +4235,7 @@ function requireVm_image () {
 	if (hasRequiredVm_image) return vm_image;
 	hasRequiredVm_image = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -5652,7 +5653,7 @@ function requireVm_interpreter () {
 	if (hasRequiredVm_interpreter) return vm_interpreter;
 	hasRequiredVm_interpreter = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -5807,7 +5808,6 @@ function requireVm_interpreter () {
 	            returnTrue  = 257,
 	            returnFalse = 258,
 	            returnNil   = 259,
-	            opts = typeof location === 'object' ? location.hash : "",
 	            sista = this.method.methodSignFlag();
 	        [
 	            // Etoys fallback for missing translation files is hugely inefficient.
@@ -5816,13 +5816,19 @@ function requireVm_interpreter () {
 	            //{method: "String>>translated", primitive: returnSelf, enabled: true},
 	            //{method: "String>>translatedInAllDomains", primitive: returnSelf, enabled: true},
 	            // 64 bit Squeak does not flush word size on snapshot
-	            {method: "SmalltalkImage>>wordSize", literal: {index: 1, old: 8, hack: 4}, enabled: true},
+	            {method: "SmalltalkImage>>wordSize", literal: {index: 1, old: 8, hack: 4, skip: this.nilObj}, enabled: true},
 	            // Squeak 5.3 disable wizard by replacing #open send with pop
-	            {method: "ReleaseBuilder class>>prepareEnvironment", bytecode: {pc: 28, old: 0xD8, hack: 0x87}, enabled: opts.includes("wizard=false")},
+	            {method: "ReleaseBuilder class>>prepareEnvironment", bytecode: {pc: 28, old: 0xD8, hack: 0x87}, enabled: !sista & this.options.wizard===false},
+	            // Squeak 6.0 disable wizard by replacing #openWelcomeWorkspacesWith: send with pop
+	            {method: "ReleaseBuilder class>>prepareEnvironment", bytecode: {closure: 9, pc: 5, old: 0x81, hack: 0xD8}, enabled: sista & this.options.wizard===false},
+	            // Squeak 6.0 disable welcome workspace by replacing #open send with pop
+	            {method: "ReleaseBuilder class>>prepareEnvironment", bytecode: {closure: 9, pc: 2, old: 0x90, hack: 0xD8}, enabled: sista & this.options.welcome===false},
 	            // Squeak source file should use UTF8 not MacRoman (both V3 and Sista)
 	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 53, old: 0x45, hack: 0x49}, enabled: !this.image.isSpur},
 	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 38, old: 0x16, hack: 0x13}, enabled: this.image.isSpur && sista},
 	            {method: "Latin1Environment class>>systemConverterClass", bytecode: {pc: 50, old: 0x44, hack: 0x48}, enabled: this.image.isSpur && !sista},
+	            // New FFI can't detect platform – pretend to be 32 bit intel
+	            {method: "FFIPlatformDescription>>abi", literal: { index: 21, old_str: 'UNKNOWN_ABI', new_str: 'IA32'}, enabled: sista},
 	        ].forEach(function(each) {
 	            try {
 	                var m = each.enabled && this.findMethod(each.method);
@@ -5831,11 +5837,14 @@ function requireVm_interpreter () {
 	                        byte = each.bytecode,
 	                        lit = each.literal,
 	                        hacked = true;
+	                    if (byte && byte.closure) m = m.pointers[byte.closure];
 	                    if (prim) m.pointers[0] |= prim;
 	                    else if (byte && m.bytes[byte.pc] === byte.old) m.bytes[byte.pc] = byte.hack;
 	                    else if (byte && m.bytes[byte.pc] === byte.hack) hacked = false; // already there
-	                    else if (lit && m.pointers[lit.index].pointers[1] === lit.old) m.pointers[lit.index].pointers[1] = lit.hack;
-	                    else if (lit && m.pointers[lit.index].pointers[1] === lit.hack) hacked = false; // already there
+	                    else if (lit && lit.old_str && m.pointers[lit.index].bytesAsString() === lit.old_str) m.pointers[lit.index] = this.primHandler.makeStString(lit.new_str);
+	                    else if (lit && m.pointers[lit.index].pointers?.[1] === lit.skip) hacked = false; // not needed
+	                    else if (lit && m.pointers[lit.index].pointers?.[1] === lit.old) m.pointers[lit.index].pointers[1] = lit.hack;
+	                    else if (lit && m.pointers[lit.index].pointers?.[1] === lit.hack) hacked = false; // already there
 	                    else { hacked = false; console.warn("Not hacking " + each.method); }
 	                    if (hacked) console.warn("Hacking " + each.method);
 	                }
@@ -6315,7 +6324,7 @@ function requireVm_interpreter () {
 	        throw Error("Oh No!");
 	    },
 	    forceInterruptCheck: function() {
-	        this.interruptCheckCounter = -1000;
+	        this.interruptCheckCounter = -1e3;
 	    },
 	    checkForInterrupts: function() {
 	        //Check for interrupts at sends and backward jumps
@@ -7103,7 +7112,7 @@ function requireVm_interpreter () {
 	                this.popNandPush(2, numResult);
 	                return true;
 	            }
-	            if (numResult >= -0xFFFFFFFF && numResult <= 0xFFFFFFFF) {
+	            if (numResult >= -4294967295 && numResult <= 0xFFFFFFFF) {
 	                var negative = numResult < 0,
 	                    unsigned = negative ? -numResult : numResult,
 	                    lgIntClass = negative ? 42 : 13,
@@ -7589,7 +7598,7 @@ function requireVm_interpreter_proxy () {
 	if (hasRequiredVm_interpreter_proxy) return vm_interpreter_proxy;
 	hasRequiredVm_interpreter_proxy = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -7736,7 +7745,7 @@ function requireVm_interpreter_proxy () {
 	        return typeof obj !== "number" && obj.isPointers();
 	    },
 	    isIntegerValue: function(obj) {
-	        return typeof obj === "number" && obj >= -0x40000000 && obj <= 0x3FFFFFFF;
+	        return typeof obj === "number" && obj >= -1073741824 && obj <= 0x3FFFFFFF;
 	    },
 	    isArray: function(obj) {
 	        return obj.sqClass === this.vm.specialObjects[7];
@@ -7910,7 +7919,7 @@ function requireVm_instruction_stream () {
 	if (hasRequiredVm_instruction_stream) return vm_instruction_stream;
 	hasRequiredVm_instruction_stream = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -8058,7 +8067,7 @@ function requireVm_instruction_stream_sista () {
 	if (hasRequiredVm_instruction_stream_sista) return vm_instruction_stream_sista;
 	hasRequiredVm_instruction_stream_sista = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -8234,7 +8243,7 @@ function requireVm_instruction_printer () {
 	if (hasRequiredVm_instruction_printer) return vm_instruction_printer;
 	hasRequiredVm_instruction_printer = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -8424,7 +8433,7 @@ function requireVm_primitives () {
 	if (hasRequiredVm_primitives) return vm_primitives;
 	hasRequiredVm_primitives = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -8699,7 +8708,7 @@ function requireVm_primitives () {
 	                else return this.popNandPushIfOK(argCount+1, this.stackNonInteger(0).hash); //primitiveImmediateAsInteger
 	            case 172: if (this.oldPrims) return this.namedPrimitive('SoundPlugin', 'primitiveSoundStop', argCount);
 	                this.vm.warnOnce("missing primitive: 172 (primitiveFetchMourner)");
-	                return this.popNandPushIfOK(argCount, this.vm.nilObj); // do not fail
+	                return this.popNandPushIfOK(argCount+1, this.vm.nilObj); // do not fail
 	            case 173: if (this.oldPrims) return this.namedPrimitive('SoundPlugin', 'primitiveSoundAvailableSpace', argCount);
 	                else return this.popNandPushIfOK(argCount+1, this.objectAt(false,false,true)); // slotAt:
 	            case 174: if (this.oldPrims) return this.namedPrimitive('SoundPlugin', 'primitiveSoundPlaySamples', argCount);
@@ -9095,7 +9104,7 @@ function requireVm_primitives () {
 	            value += bytes[i] * f;
 	        if (this.isA(stackVal, 13) && value <= 0x7FFFFFFF)
 	            return value;
-	        if (this.isA(stackVal, 42) && -value >= -0x80000000)
+	        if (this.isA(stackVal, 42) && -value >= -2147483648)
 	            return -value;
 	        this.success = false;
 	        return 0;
@@ -10717,7 +10726,7 @@ function requireJit () {
 	if (hasRequiredJit) return jit;
 	hasRequiredJit = 1;
 	/*
-	 * Copyright (c) 2014-2024 Vanessa Freudenberg
+	 * Copyright (c) 2014-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -11898,7 +11907,7 @@ function requireVm_display () {
 	if (hasRequiredVm_display) return vm_display;
 	hasRequiredVm_display = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -11961,7 +11970,7 @@ function requireVm_display_headless () {
 	if (hasRequiredVm_display_headless) return vm_display_headless;
 	hasRequiredVm_display_headless = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -12015,7 +12024,7 @@ function requireVm_input () {
 	if (hasRequiredVm_input) return vm_input;
 	hasRequiredVm_input = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -12084,7 +12093,7 @@ function requireVm_input_headless () {
 	if (hasRequiredVm_input_headless) return vm_input_headless;
 	hasRequiredVm_input_headless = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -12133,7 +12142,7 @@ function requireVm_plugins () {
 	if (hasRequiredVm_plugins) return vm_plugins;
 	hasRequiredVm_plugins = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -12201,7 +12210,7 @@ function requireVm_plugins_file_node () {
 	if (hasRequiredVm_plugins_file_node) return vm_plugins_file_node;
 	hasRequiredVm_plugins_file_node = 1;
 	/*
-	 * Copyright (c) 2013-2024 Vanessa Freudenberg
+	 * Copyright (c) 2013-2025 Vanessa Freudenberg
 	 *
 	 * Permission is hereby granted, free of charge, to any person obtaining a copy
 	 * of this software and associated documentation files (the "Software"), to deal
@@ -14921,7 +14930,7 @@ function requireCpSystemPlugin () {
 	      // 64-bit images have 61-bit SmallIntegers, 32-bit images have 31-bit SmallIntegers.
 	      // Since JavaScript only supports 53-bits integers, use that max in 64-bit images.
 	      var is64Bit = this.vm.image.version >= 68000;
-	      this.minSmallInteger = is64Bit ? Number.MIN_SAFE_INTEGER : -0x40000000;
+	      this.minSmallInteger = is64Bit ? Number.MIN_SAFE_INTEGER : -1073741824;
 	      this.maxSmallInteger = is64Bit ? Number.MAX_SAFE_INTEGER :  0x3FFFFFFF;
 	      this.primHandler.makeStObject = function(obj, proxyClass, seen) {
 	        // Check for special 'primitive' objects (no need to use 'seen' here)
