@@ -1,6 +1,6 @@
 "use strict";
 /*
- * Copyright (c) 2013-2024 Vanessa Freudenberg
+ * Copyright (c) 2013-2025 Vanessa Freudenberg
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -465,7 +465,7 @@ Object.subclass('Squeak.Object',
             if (name && name.bytes) return name.bytesAsString();
         }
         // must be meta class
-        for (var clsIndex = 3; clsIndex <= 6; clsIndex++) {
+        for (var clsIndex = 5; clsIndex <= 6; clsIndex++) {
             var cls = this.pointers[clsIndex];
             if (cls && cls.pointers) {
                 for (var nameIdx = 6; nameIdx <= 7; nameIdx++) {

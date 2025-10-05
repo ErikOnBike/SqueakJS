@@ -12,6 +12,7 @@ function CpDOMPlugin() {
     eventsReceived: [],
     throttleEventTypes: [ "pointermove", "touchmove", "wheel", "gesturechange" ],
     transitionStartTick: performance.now(),
+    elementsToInitialize: [],
     namespaces: [
       // Default namespaces (for attributes, therefore without elementClass)
       { prefix: "xlink", uri: "http://www.w3.org/1999/xlink", elementClass: null },
@@ -49,16 +50,23 @@ function CpDOMPlugin() {
       if(this.originalMakeStObject) {
         return; // Already installed
       }
-      var self = this;
-      self.originalMakeStObject = this.primHandler.makeStObject;
+      var thisHandle = this;
+      this.originalMakeStObject = this.primHandler.makeStObject;
       this.primHandler.makeStObject = function(obj, proxyClass, seen) {
         if(obj !== undefined && obj !== null) {
           // Check for DOM element (it will use own internal wrapping, do not use 'seen' here)
           if(obj.querySelectorAll) {
-            return self.instanceForElement(obj);
+            return thisHandle.instanceForElement(obj);
+          }
+          // Check for DOM event
+          if(obj.bubbles !== undefined && obj.currentTarget && thisHandle.eventClassMap[obj.type]) {
+            let eventClass = thisHandle.eventClassMap[obj.type];
+            let newEvent = thisHandle.vm.instantiateClass(eventClass, 0);
+            newEvent.event = obj;
+            return newEvent;
           }
         }
-        return self.originalMakeStObject.call(this, obj, proxyClass, seen);
+        return thisHandle.originalMakeStObject.call(this, obj, proxyClass, seen);
       };
       // Make sure document has a localName
       window.document.localName = "document";
@@ -101,6 +109,23 @@ function CpDOMPlugin() {
         .replace(/^([A-Za-z0-9]*)$/, "x-$1")  // Failsafe since custom tag name requires at least one hyphen
         .toLowerCase()
       ;
+    },
+
+    // Helper method to initialize TemplateComponents correctly
+    initializePendingElements: function() {
+      if(!this.initializeRunner) {
+        return;
+      }
+
+      // Extract and reset pending elements and runner
+      window.clearTimeout(this.initializeRunner);
+      var elements = this.elementsToInitialize;
+      this.elementsToInitialize = [];
+      this.initializeRunner = null;
+      var thisHandle = this;
+      elements.forEach(function(element) {
+        thisHandle.systemPlugin.smalltalkPerform(thisHandle.instanceForElement(element), "initialize");
+      });
     },
 
     // Point helper methods
@@ -164,6 +189,7 @@ function CpDOMPlugin() {
       domRectangleClass.allInstVarNames().forEach(function(name, index) {
         if(rectangle[name] !== undefined) {
           domRectangle.pointers[index] = primHandler.makeStObject(rectangle[name]);
+          domRectangle.dirty = true;
         }
       });
       return domRectangle;
@@ -180,7 +206,7 @@ function CpDOMPlugin() {
         console.error("The prefix " + prefix + " is already installed in the browser");
         return false;
       }
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       this.namespaces.push({ prefix: prefix, uri: namespaceURI, elementClass: receiver });
       return this.answerSelf(argCount);
     },
@@ -194,17 +220,26 @@ function CpDOMPlugin() {
         tagName = tagName.slice(separatorIndex + 1);
       }
       var namespace = this.namespaceForPrefix(prefix);
-      var element = !namespace || prefix === "xhtml" ?
-        window.document.createElement(tagName) :
-        window.document.createElementNS(namespace.uri, tagName)
-      ;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      if(tagName === receiver.customTag) {
-        // Register if WebComponent is created from code (vs being created from markup content).
-        // This information is used in the WebComponent constructor to allow correct initialization
-        // of all WebComponents.
-        element.__cp_created_from_code = true;
+      var element;
+      if(!namespace || prefix === "xhtml") {
+        var customClass = window.customElements.get(tagName);
+        if(customClass) {
+          if(customClass.stClass) {
+            // Create without performing the initialize method (the code calling this method will do this)
+            element = new customClass(true);
+          } else {
+            element = new customClass();
+          }
+        } else {
+          element = window.document.createElement(tagName);
+        }
+      } else {
+        element = window.document.createElementNS(namespace.uri, tagName)
       }
+
+      // Ensure all nested WebComponents are initialized
+      this.initializePendingElements();
+
       return this.answer(argCount, this.instanceForElement(element));
     },
     "primitiveDomElementDocument": function(argCount) {
@@ -227,7 +262,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var id = this.interpreterProxy.stackValue(0).asString();
       if(!id) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       // Check the receiver is a root element (this means it has an activeElement)
       if(!domElement || domElement.activeElement === undefined) return false;
       var element = domElement.getElementById(id);
@@ -237,7 +272,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var querySelector = this.interpreterProxy.stackValue(0).asString();
       if(!querySelector) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       var thisHandle = this;
       var matchingElements = Array.from(domElement.querySelectorAll(querySelector))
@@ -251,7 +286,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var querySelector = this.interpreterProxy.stackValue(0).asString();
       if(!querySelector) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       var firstMatchingElement = domElement.querySelector(querySelector);
       return this.answer(argCount, this.instanceForElement(firstMatchingElement));
@@ -260,20 +295,28 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var selector = this.interpreterProxy.stackValue(0).asString();
       if(!selector) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.matches(selector));
     },
+    "primitiveDomElementHost": function(argCount) {
+      if(argCount !== 0) return false;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
+      if(!domElement) return false;
+      var host = domElement.getRootNode().host;	// Is undefined for elements outside a shadow DOM
+      return this.answer(argCount, this.instanceForElement(host));
+    },
+
     "primitiveDomElementParent": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var parentElement = domElement.parentElement;
       return this.answer(argCount, this.instanceForElement(parentElement));
     },
     "primitiveDomElementChildren": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var thisHandle = this;
       var childElements = Array.from(domElement.children)
@@ -285,14 +328,14 @@ function CpDOMPlugin() {
     },
     "primitiveDomElementPreviousSibling": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var siblingElement = domElement.previousElementSibling;
       return this.answer(argCount, this.instanceForElement(siblingElement));
     },
     "primitiveDomElementNextSibling": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var siblingElement = domElement.nextElementSibling;
       return this.answer(argCount, this.instanceForElement(siblingElement));
@@ -301,47 +344,47 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var parentElement = this.interpreterProxy.stackValue(0).domElement;
       if(!parentElement) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       return this.answer(argCount, parentElement !== domElement && parentElement.contains(domElement));
     },
     "primitiveDomElementTagName": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.localName || domElement.tagName || "--shadow--");
     },
     "primitiveDomElementId": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.id);
     },
     "primitiveDomElementId:": function(argCount) {
       if(argCount !== 1) return false;
       var id = this.interpreterProxy.stackValue(0).asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.id = id;
       return this.answerSelf(argCount);
     },
     "primitiveDomElementTextContent": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.textContent);
     },
     "primitiveDomElementTextContent:": function(argCount) {
       if(argCount !== 1) return false;
       var textContent = this.interpreterProxy.stackValue(0).asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.textContent = textContent;
       return this.answerSelf(argCount);
     },
     "primitiveDomElementLocalTextContent": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var textNodes = Array.prototype.filter.call(domElement.childNodes, function(childNode) { return childNode.nodeType === Node.TEXT_NODE; });
       var textContent = textNodes.map(function(textNode) { return textNode.textContent; }).join("");
@@ -349,7 +392,7 @@ function CpDOMPlugin() {
     },
     "primitiveDomElementMarkupContent": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.innerHTML);
     },
@@ -357,16 +400,20 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var content = this.interpreterProxy.stackValue(0);
       var markupContent = content.asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.innerHTML = markupContent;
+
+      // Ensure any WebComponents created by the markup are initialized
+      this.initializePendingElements();
+
       return this.answerSelf(argCount);
     },
     "primitiveDomElementIsClassed:": function(argCount) {
       if(argCount !== 1) return false;
       var className = this.interpreterProxy.stackValue(0).asString();
       if(!className) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.classList.contains(className));
     },
@@ -374,7 +421,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var className = this.interpreterProxy.stackValue(0).asString();
       if(!className) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.classList.add(className);
       return this.answerSelf(argCount);
@@ -383,7 +430,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var className = this.interpreterProxy.stackValue(0).asString();
       if(!className) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.classList.remove(className);
       return this.answerSelf(argCount);
@@ -392,7 +439,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var attributeName = this.interpreterProxy.stackValue(0).asString();
       if(!attributeName) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       var namespaceURI = this.namespaceURIFromName(attributeName);
       var attributeValue;
@@ -409,7 +456,7 @@ function CpDOMPlugin() {
       if(!attributeName) return false;
       var value = this.interpreterProxy.stackValue(0);
       var attributeValue = value.isNil ? null: value.asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
       if(!domElement) return false;
       var namespaceURI = this.namespaceURIFromName(attributeName);
       if(attributeValue === null) {
@@ -431,7 +478,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var attributeName = this.interpreterProxy.stackValue(0).asString();
       if(!attributeName) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       var namespaceURI = this.namespaceURIFromName(attributeName);
       if(namespaceURI) {
@@ -445,7 +492,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var styleName = this.interpreterProxy.stackValue(0).asString();
       if(!styleName) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement.style.getPropertyValue(styleName) ||
           window.getComputedStyle(domElement).getPropertyValue(styleName));
@@ -456,7 +503,7 @@ function CpDOMPlugin() {
       if(!styleName) return false;
       var value = this.interpreterProxy.stackValue(0);
       var styleValue = value.isNil ? null : value.asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
       if(!domElement) return false;
       if(styleValue === null) {
         domElement.style.removeProperty(styleName);
@@ -469,7 +516,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var styleName = this.interpreterProxy.stackValue(0).asString();
       if(!styleName) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       domElement.style.removeProperty(styleName);
       return this.answerSelf(argCount);
@@ -478,7 +525,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var propertyName = this.interpreterProxy.stackValue(0).asString();
       if(!propertyName) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       return this.answer(argCount, domElement[propertyName]);
     },
@@ -487,20 +534,20 @@ function CpDOMPlugin() {
       var propertyName = this.interpreterProxy.stackValue(1).asString();
       if(!propertyName) return false;
       var propertyValue = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0));
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
       if(!domElement) return false;
       domElement[propertyName] = propertyValue;
       return this.answerSelf(argCount);
     },
     "primitiveDomElementBoundingClientRectangle": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, this.makeDomRectangle(domElement.getBoundingClientRect()));
     },
     "primitiveDomElementClone": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       var clone = domElement.cloneNode(false);
       // Remove id to prevent duplication
@@ -520,7 +567,7 @@ function CpDOMPlugin() {
       var childInstance = this.interpreterProxy.stackValue(0);
       var childElement = childInstance.domElement;
       if(!childElement) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
       if(domElement.children.length === 0 && domElement.childNodes.length > 0) {
         // Remove any existing text content when there are no children yet.
@@ -537,10 +584,20 @@ function CpDOMPlugin() {
       if(!childElement) return false;
       var siblingElement = this.interpreterProxy.stackValue(0).domElement;
       if(!siblingElement) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
-      if(!domElement || siblingElement.parentElement !== domElement) return false;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
+      if(!domElement || siblingElement.parentNode !== domElement) return false;
       domElement.insertBefore(childElement, siblingElement);
       return this.answer(argCount, childInstance);
+    },
+    "primitiveDomElementReplaceWith:": function(argCount) {
+      if(argCount !== 1) return false;
+      var replacementInstance = this.interpreterProxy.stackValue(0);
+      var replacementElement = replacementInstance.domElement;
+      if(!replacementElement) return false;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
+      if(!domElement) return false;
+      domElement.replaceWith(replacementElement);
+      return this.answer(argCount, replacementInstance);
     },
     "primitiveDomElementReplaceChild:with:": function(argCount) {
       if(argCount !== 2) return false;
@@ -549,8 +606,8 @@ function CpDOMPlugin() {
       var replacementInstance = this.interpreterProxy.stackValue(0);
       var replacementElement = replacementInstance.domElement;
       if(!replacementElement) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
-      if(!domElement || childElement.parentElement !== domElement) return false;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
+      if(!domElement || childElement.parentNode !== domElement) return false;
       domElement.replaceChild(replacementElement, childElement);
       return this.answer(argCount, replacementInstance);
     },
@@ -559,15 +616,15 @@ function CpDOMPlugin() {
       var childInstance = this.interpreterProxy.stackValue(0);
       var childElement = childInstance.domElement;
       if(!childElement) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
-      if(childElement.parentElement !== domElement) return false;
+      if(childElement.parentNode !== domElement) return false;
       domElement.removeChild(childElement);
       return this.answer(argCount, childInstance);
     },
     "primitiveDomElementUnregisterAllInterest": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       if(domElement.__cp_event_listeners) {
         domElement.__cp_event_listeners.forEach(function(eventListeners, eventClass) {
@@ -581,7 +638,7 @@ function CpDOMPlugin() {
     },
     "primitiveDomElementApply:withArguments:": function(argCount) {
       if(argCount !== 2) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(2).domElement;
       if(!domElement) return false;
       var functionName = this.interpreterProxy.stackValue(1).asString();
       if(!functionName) return false;
@@ -590,7 +647,7 @@ function CpDOMPlugin() {
     },
     "primitiveDomElementApply:withArguments:resultAs:": function(argCount) {
       if(argCount !== 3) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(3).domElement;
       if(!domElement) return false;
       var functionName = this.interpreterProxy.stackValue(2).asString();
       if(!functionName) return false;
@@ -625,18 +682,69 @@ function CpDOMPlugin() {
     },
 
     // WebComponent class methods
-    "primitiveWebComponentRegister": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+    "primitiveWebComponentRegisterWithInitialize:thirdParty:": function(argCount) {
+      if(argCount !== 2) return false;
+      var receiver = this.interpreterProxy.stackValue(2);
       if(receiver.customTag !== undefined) {
         console.error("Registering a WebComponent which already has a custom tag: " + receiver.customTag);
         return false;
       }
 
+      var hasInitialize = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(1)) === true;
+      var isThirdParty = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0)) === true;
+
       // Keep track of custom tag and Smalltalk class
       var customTag = this.tagNameFromClass(receiver);
       receiver.customTag = customTag;
       this.customTagMap[customTag] = receiver;
+
+      // Create WebComponent constructor if not from a third-party (JS WebComponent already exists)
+      var thisHandle = this;
+      if(!isThirdParty) {
+
+        // Create custom class and register it
+        try {
+          var customClass = class extends HTMLElement {
+            constructor(skipInitialize) {
+              super();
+              thisHandle.ensureShadowRoot(receiver, this);
+
+              // Upgrade the shadow DOM so all constructors are called for nested WebComponents.
+              // Doing this before the following initialization means, children are initialized
+              // before the parent. This seems logical because the nested elements can then be
+              // used from the parent (which defined its children, so expects them to be there).
+              window.customElements.upgrade(this.shadowRoot);
+
+              if(skipInitialize !== true && hasInitialize) {
+                // Because WebComponents should not access their children during construction,
+                // add the new instance to the list of pending elements and perform initialization
+                // deferred (until the next tick).
+                thisHandle.elementsToInitialize.push(this);
+                if(!thisHandle.initializeRunner) {
+                  thisHandle.initializeRunner = window.setTimeout(function() {
+                    thisHandle.initializePendingElements();
+                  }, 0);
+                }
+              }
+            }
+            connectedCallback() {
+              var component = this;
+              window.setTimeout(function() { component.dispatchEvent(new Event("connected")) }, 0);
+            }
+            disconnectedCallback() {
+              var component = this;
+              window.setTimeout(function() { component.dispatchEvent(new Event("disconnected")) }, 0);
+            }
+          };
+
+          // Keep track of custom class
+          window.customElements.define(customTag, customClass);
+          customClass.stClass = receiver;
+        } catch(e) {
+          console.error("Failed to create new custom element with tag " + receiver.customTag, e);
+          return false;
+        }
+      }
 
       return this.answerSelf(argCount);
     },
@@ -648,21 +756,21 @@ function CpDOMPlugin() {
     },
     "primitiveWebComponentTagName": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var tagName = this.tagNameFromClass(receiver);
       return this.answer(argCount, tagName);
     },
+
+    // WebComponent instance methods
     "primitiveWebComponentShadowRoot": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
       return this.answer(argCount, this.instanceForElement(domElement.shadowRoot));
     },
-
-    // WebComponent instance methods
     "primitiveWebComponentTextContent": function(argCount) {
       if(argCount !== 0) return false;
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
 
       // Extract text nodes from myself and all children (not being slotted elements)
@@ -679,7 +787,7 @@ function CpDOMPlugin() {
     "primitiveWebComponentTextContent:": function(argCount) {
       if(argCount !== 1) return false;
       var textContent = this.interpreterProxy.stackValue(0).asString();
-      var domElement = this.interpreterProxy.stackValue(argCount).domElement;
+      var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
 
       // Remove any existing content (not being slotted elements)
@@ -703,62 +811,22 @@ function CpDOMPlugin() {
       if(!domElement.shadowRoot) {
         var shadowRoot = domElement.attachShadow({ mode: "open" });
         if(elementClass.templateElement) {
+          // Adding the cloned nodes to the shadow DOM will (if the element itself is attached to
+          // the live DOM or because of the upgrade() in the WebComponent constructor) trigger the
+          // execution of the nested WebComponent constructors. So perform any pending initialization
+          // for these components.
           shadowRoot.appendChild(elementClass.templateElement.cloneNode(true));
+          this.initializePendingElements();
         }
       }
     },
 
     // TemplateComponent class methods
-    "primitiveTemplateComponentRegisterStyleAndTemplate": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      if(receiver.customTag === undefined) {
-        console.error("Registering a TemplateComponent without a custom tag");
-        return false;
-      }
-
-      // Create custom class and register it
-      var thisHandle = this;
-      try {
-        var customClass = class extends HTMLElement {
-          constructor() {
-            super();
-            thisHandle.ensureShadowRoot(receiver, this);
-
-            // Since a WebComponent can be created both from code as well as from
-            // markup content, we need to inform the Smalltalk code of the later
-            // situation. In this way the Smalltalk #initialize message can be send
-            // to the new instance (in all situations).
-            // Use the fact that setTimeout will run code after current execution
-            // has finished. This means the regular instantiation code has finished
-            // (in the situation it was called from code).
-            var instance = this;
-            window.setTimeout(function() {
-              // If component is NOT created by code, dispatch event to allow Smalltalk
-              // code to do the initialization after all.
-              if(!instance.__cp_created_from_code) {
-                var requestInitEvent = new CustomEvent("createdfrommarkup", { detail: thisHandle.instanceForElement(instance) });
-                window.document.dispatchEvent(requestInitEvent);
-              }
-            }, 0);
-          }
-        };
-
-        // Keep track of custom class
-        window.customElements.define(receiver.customTag, customClass);
-        customClass.sqClass = receiver;
-      } catch(e) {
-        console.error("Failed to create new custom element with tag " + receiver.customTag, e);
-        return false;
-      }
-
-      return this.answerSelf(argCount);
-    },
     "primitiveTemplateComponentInstallStyle:andTemplate:": function(argCount) {
       if(argCount !== 2) return false;
       var styleString = this.interpreterProxy.stackValue(1).asString();
       var templateString = this.interpreterProxy.stackValue(0).asString();
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
 
       // Set the style without installing it (this will happen when installing the template)
       receiver.style = styleString;
@@ -771,7 +839,7 @@ function CpDOMPlugin() {
     "primitiveTemplateComponentInstallStyle:": function(argCount) {
       if(argCount !== 1) return false;
       var styleString = this.interpreterProxy.stackValue(0).asString();
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       receiver.style = styleString;
       this.installStyleInTemplate(receiver);
       this.styleAllInstances(receiver);
@@ -782,38 +850,55 @@ function CpDOMPlugin() {
       // Retrieve templateElement
       var templateElement = webComponentClass.templateElement;
       if(!templateElement) {
+        // Abstract classes don't have a template nor style attached
         return;
       }
 
-      // Create new style node from specified styleString
-      var newStyleNode = window.document.createElement("style");
-      newStyleNode.id = "cp-css--" + webComponentClass.customTag;
-      newStyleNode.textContent = webComponentClass.style;
+      // Select old style element
+      var styleElementId = "cp-css--" + webComponentClass.customTag;
+      var oldStyleElement = templateElement.getElementById(styleElementId);
+
+      // If new style is empty, only remove old style and we're done
+      var style = webComponentClass.style.trim();
+      if(!style) {
+        if(oldStyleElement) {
+          oldStyleElement.remove();
+        }
+        return;
+      }
+
+      // Create new style element from specified styleString
+      var newStyleElement = window.document.createElement("style");
+      newStyleElement.id = styleElementId;
+      newStyleElement.textContent = style;
 
       // Replace existing styles or add new styles
-      var oldStyleNode = templateElement.querySelector("#" + newStyleNode.id);
-      if(oldStyleNode) {
+      if(oldStyleElement) {
 
         // Existing styles are replaced
-        oldStyleNode.parentNode.replaceChild(newStyleNode, oldStyleNode);
+        oldStyleElement.parentNode.replaceChild(newStyleElement, oldStyleElement);
       } else {
 
         // Insert the style to become the first element of the template
-        templateElement.insertBefore(newStyleNode, templateElement.firstElementChild);
+        templateElement.insertBefore(newStyleElement, templateElement.firstElementChild);
       }
     },
     "primitiveTemplateComponentInstallTemplate:": function(argCount) {
       if(argCount !== 1) return false;
       var templateString = this.interpreterProxy.stackValue(0).asString();
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       this.installTemplate(receiver, templateString);
       this.renderAllInstances(receiver);
       return this.answerSelf(argCount);
     },
     installTemplate: function(webComponentClass, template) {
 
-      // Create template node from specified template (String)
-      // The DOM parser is very forgiving, so no need for try/catch here
+      // Create template element from specified template (String).
+      // The DOM parser is very forgiving, so no need for try/catch here.
+      // Parsing will NOT result in calling the actual constructor of any
+      // nested WebComponents. Only when adding them to the live DOM or by
+      // calling the upgrade() in the parent WebComponent constructor
+      // explicitly, will the nested WebComponent constructors be called.
       var domParser = new DOMParser();
       var templateElement = domParser.parseFromString("<template>" + (template || "") + "</template>", "text/html").querySelector("template").content;
 
@@ -830,13 +915,13 @@ function CpDOMPlugin() {
         delete this.nestedTags[webComponentClass.customTag];
       }
 
-      // Store the template node and update style (which is element within templateElement)
+      // Store the template element and update style (which is element within templateElement)
       webComponentClass.templateElement = templateElement;
       this.installStyleInTemplate(webComponentClass);
     },
     "primitiveTemplateComponentRenderAllInstances": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       if(!receiver.templateElement) return false;
       this.renderAllInstances(receiver);
       return this.answerSelf(argCount);
@@ -858,6 +943,10 @@ function CpDOMPlugin() {
     },
     renderAllInstances: function(webComponentClass) {
       var templateElement = webComponentClass.templateElement;
+      if(!templateElement) {
+        // Abstract classes don't have a template nor style attached
+        return;
+      }
       var thisHandle = this;
       this.allInstancesDo(webComponentClass, window.document, function(instance) {
         thisHandle.renderTemplateOnElement(webComponentClass, templateElement, instance);
@@ -874,49 +963,59 @@ function CpDOMPlugin() {
           var removeElement = element;
           element = element.nextElementSibling;
           removeElement.remove();
-	} else {
+        } else {
           element = element.nextElementSibling;
-	}
+        }
       }
 
-      // Set new content using a copy of the template to prevent changes (by others) to persist
+      // Set new content using a copy of the template to prevent changes (by others) to persist.
+      // Adding the cloned nodes to the shadow DOM will (if the element itself is attached to
+      // the live DOM or because of the upgrade() in the WebComponent constructor) trigger the
+      // execution of the nested WebComponent constructors. So perform any pending initialization
+      // for these components.
       shadowRoot.appendChild(templateElement.cloneNode(true));
+      this.initializePendingElements();
     },
     styleAllInstances: function(webComponentClass) {
       var templateElement = webComponentClass.templateElement;
-      var styleSelector = "#cp-css--" + webComponentClass.customTag;
-      var styleElement = templateElement.querySelector(styleSelector);
-      if(!styleElement) {
-        console.warn("Styling all instance of <" + webComponentClass.customTag + ">, but no style present");
+      if(!templateElement) {
+        // Abstract classes don't have a template nor style attached
         return;
       }
-      var styleContent = styleElement.textContent;
+      var styleElementId = "cp-css--" + webComponentClass.customTag;
+      var styleElement = templateElement.getElementById(styleElementId);
+      var styleContent = styleElement ? styleElement.textContent : null;
       var thisHandle = this;
       this.allInstancesDo(webComponentClass, window.document, function(instance) {
-        thisHandle.updateStyleOnElement(styleContent, styleSelector, instance);
+        thisHandle.updateStyleOnElement(styleContent, styleElementId, instance);
       });
     },
-    updateStyleOnElement: function(style, styleSelector, element) {
-      var styleElement = element.shadowRoot.querySelector(styleSelector);
+    updateStyleOnElement: function(style, styleElementId, element) {
+      var styleElement = element.shadowRoot.getElementById(styleElementId);
       if(styleElement) {
+        if(style) {
 
-        // Update existing style
-        styleElement.textContent = style;
-      } else {
+          // Update existing style
+          styleElement.textContent = style;
+        } else {
+
+          // Remove old style
+          styleElement.remove();
+        }
+      } else if(style) {
 
         // Insert new style to become the first element in the shadow DOM
-        // (this should normally not happen, every element should have a style)
-        var newStyleNode = window.document.createElement("style");
-        newStyleNode.id = styleSelector.slice(1);	// Remove '#'
-        newStyleNode.textContent = style;
-        element.insertBefore(newStyleNode, element.firstElementChild);
+        var newStyleElement = window.document.createElement("style");
+        newStyleElement.id = styleElementId;
+        newStyleElement.textContent = style;
+        element.insertBefore(newStyleElement, element.firstElementChild);
       }
     },
 
     // TemplateComponent instance methods
     "primitiveTemplateComponentEnsureShadowRoot": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var domElement = receiver.domElement;
       if(!domElement) return false;
       this.ensureShadowRoot(receiver.sqClass, domElement);
@@ -925,6 +1024,14 @@ function CpDOMPlugin() {
 
     // Update process
     runUpdateProcess: function() {
+      // The update Process is executed using RAF (Request Animation Frame).
+      // Many browsers stop executing RAF when the browser or the specific browser tab
+      // is not focussed. This prevents unnecessary execution of code if there is nothing
+      // visible to update. As soon as the browser (tab) becomes active again, it will
+      // resume RAF execution. Any pending events (like incoming data) will be handled in
+      // the order arrived. Transitions will also resume (or receive their terminating
+      // call if the duration has passed, allowing correct final state/clean up to be
+      // shown/performed).
       let thisHandle = this;
       window.requestAnimationFrame(function() {
         thisHandle.handleEvents();
@@ -937,7 +1044,7 @@ function CpDOMPlugin() {
       if(this.eventsReceived.length > 0 && this.eventHandlerProcess && !this.eventHandlerProcess.isRunning) {
         try {
           this.eventHandlerProcess.isRunning = true;
-          this.eventHandlerProcess.runProcess();
+          this.eventHandlerProcess.run();
         } finally {
           this.eventHandlerProcess.isRunning = false;
         }
@@ -947,7 +1054,9 @@ function CpDOMPlugin() {
     // Event class methods
     "primitiveEventRegisterProcess:": function(argCount) {
       if(argCount !== 1) return false;
-      this.eventHandlerProcess = this.systemPlugin.newProcessForContext(this.interpreterProxy.stackValue(0), this.primHandler.makeStString("Event"));
+      this.eventHandlerProcess = this.interpreterProxy.stackValue(0);
+      this.systemPlugin.makeProcessSynchronous(this.eventHandlerProcess);
+      this.eventHandlerProcess.failOnAwait = true;
       return this.answerSelf(argCount);
     },
     "primitiveEventRegisterClass:forType:": function(argCount) {
@@ -960,7 +1069,7 @@ function CpDOMPlugin() {
     },
     "primitiveEventAddListenerTo:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var element = this.interpreterProxy.stackValue(0);
       var domElement = element.domElement;
       if(!domElement) return false;
@@ -1023,7 +1132,7 @@ function CpDOMPlugin() {
     },
     "primitiveEventRemoveListenerFrom:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var element = this.interpreterProxy.stackValue(0);
       var domElement = element.domElement;
       if(!domElement) return false;
@@ -1041,7 +1150,7 @@ function CpDOMPlugin() {
     },
     "primitiveEventIsListenedToOn:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var element = this.interpreterProxy.stackValue(0);
       var domElement = element.domElement;
       if(!domElement) return false;
@@ -1078,7 +1187,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var propertyName = this.interpreterProxy.stackValue(0).asString();
       if(!propertyName) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(1).event;
       if(!event) return false;
       var propertyValue = event[propertyName];
       if(!propertyValue && propertyName === "currentTarget") {
@@ -1090,7 +1199,7 @@ function CpDOMPlugin() {
     },
     "primitiveEventModifiers": function(argCount) {
       if(argCount !== 0) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(0).event;
       if(!event) return false;
       var modifiers =
         (event.altKey ? 1 : 0) +
@@ -1102,34 +1211,38 @@ function CpDOMPlugin() {
     },
     "primitiveEventPreventDefault": function(argCount) {
       if(argCount !== 0) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(0).event;
       if(!event) return false;
       event.preventDefault();
       return this.answerSelf(argCount);
     },
     "primitiveEventStopPropagation": function(argCount) {
       if(argCount !== 0) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(0).event;
       if(!event) return false;
       // Check the current target using the 'backup' value below,
       // because in a throttled event the actual value has become null.
       event.stopPropagation();
-      event.__cp_stop_propagation = true;
-      event.__cp_stop_after = event.__cp_current_target;
+      if(!event.__cp_stop_propagation) {
+        event.__cp_stop_propagation = true;
+        event.__cp_stop_after = event.__cp_current_target;
+      }
       return this.answerSelf(argCount);
     },
     "primitiveEventStopImmediatePropagation": function(argCount) {
       if(argCount !== 0) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(0).event;
       if(!event) return false;
       event.stopImmediatePropagation();
-      event.__cp_stop_propagation = true;
-      event.__cp_stop_after = null;
+      if(!event.__cp_stop_propagation) {
+        event.__cp_stop_propagation = true;
+        event.__cp_stop_after = null;
+      }
       return this.answerSelf(argCount);
     },
     "primitiveEventIsStopped": function(argCount) {
       if(argCount !== 0) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(0).event;
       if(!event) return false;
       // Check the current target using the 'backup' value below,
       // because in a throttled event the actual value has become null.
@@ -1146,12 +1259,41 @@ function CpDOMPlugin() {
       }
       return this.answer(argCount, isStopped);
     },
+    "primitiveEventCopy": function(argCount) {
+      if(argCount !== 0) return false;
+      var event = this.interpreterProxy.stackValue(0).event;
+
+      // Create dummy event object containing only properties (not being functions)
+      let dummyEvent = {};
+      for(let key in event) {
+        let value = event[key];
+        if(!value || !value.apply) {
+          dummyEvent[key] = value;
+        }
+      }
+
+      // Mark the event stopped
+      dummyEvent.__cp_stop_propagation = true;
+      dummyEvent.__cp_stop_after = null;
+
+      // Add dummy methods
+      dummyEvent.preventDefault = function() {};
+      dummyEvent.stopPropagation = function() {};
+      dummyEvent.stopImmediatePropagation = function() {};
+
+      // Create new instance and connect dummy event
+      let eventClass = this.eventClassMap[event.type];
+      let newEvent = this.vm.instantiateClass(eventClass, 0);
+      newEvent.event = dummyEvent;
+
+      return this.answer(argCount, newEvent);
+    },
 
     // CustomEvent instance methods
     "primitiveCustomEventCreateWithDetail:": function(argCount) {
       if(argCount !== 1) return false;
       var detail = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(0));
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       if(receiver.event) return false; // Already created!
       var type = receiver.sqClass.type;
       receiver.event = new CustomEvent(type, { detail: detail, bubbles: true, cancelable: true, composed: true });
@@ -1162,7 +1304,7 @@ function CpDOMPlugin() {
       if(argCount !== 1) return false;
       var domElement = this.interpreterProxy.stackValue(0).domElement;
       if(!domElement) return false;
-      var event = this.interpreterProxy.stackValue(argCount).event;
+      var event = this.interpreterProxy.stackValue(1).event;
       if(!event) return false;
       // Dispatch event 'outside' this event handling method (to prevent stack getting out of balance)
       window.setTimeout(function() { domElement.dispatchEvent(event) }, 0);
@@ -1172,7 +1314,9 @@ function CpDOMPlugin() {
     // Transition class methods
     "primitiveTransitionRegisterProcess:": function(argCount) {
       if(argCount !== 1) return false;
-      this.transitionProcess = this.systemPlugin.newProcessForContext(this.interpreterProxy.stackValue(0), this.primHandler.makeStString("Transition"));
+      this.transitionProcess = this.interpreterProxy.stackValue(0);
+      this.systemPlugin.makeProcessSynchronous(this.transitionProcess);
+      this.transitionProcess.failOnAwait = true;
       return this.answerSelf(argCount);
     },
     "primitiveTransitionHasTransitions:": function(argCount) {
@@ -1189,7 +1333,7 @@ function CpDOMPlugin() {
       // never called while already running (always called in RequestAnimationFrame loop).
       // Therefore no need to check if it is already running.
       if(this.transitionProcess && this.hasTransitions) {
-        this.transitionProcess.runProcess();
+        this.transitionProcess.run();
       }
     }
   };

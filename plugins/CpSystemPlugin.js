@@ -7,7 +7,6 @@ function CpSystemPlugin() {
     primHandler: null,
 
     setInterpreter: function(anInterpreter) {
-      this.setupGlobalObject();
       this.interpreterProxy = anInterpreter;
       this.vm = anInterpreter.vm;
       this.primHandler = this.vm.primHandler;
@@ -27,7 +26,8 @@ function CpSystemPlugin() {
       this.largeNegativeIntegerClass = this.vm.globalNamed("LargeNegativeInteger");
       this.contextClass = this.vm.globalNamed("Context");
       this.processClass = this.vm.globalNamed("Process");
-      this.maxProcessPriority = this.primHandler.getScheduler().pointers[Squeak.ProcSched_processLists].pointersSize();
+      this.scheduler = this.primHandler.getScheduler();
+      this.syncProcessPriority = this.scheduler.pointers[Squeak.ProcSched_processLists].pointersSize();
       this.globalProxyClasses = {};
       this.lastException = null;
       this.updateStringSupport();
@@ -36,92 +36,65 @@ function CpSystemPlugin() {
       return true;
     },
 
-    // Helper method to create a global scope (working similarly in Browser and in NodeJS).
-    // Since ES2020 there should be a globalThis we can use. If not present, create one.
-    setupGlobalObject: function() {
-      if(typeof window !== 'undefined') {
-        // For Browser environment create a global object named 'globalThis'.
-        if(!window.globalThis) {
-          window.globalThis = window;
-        }
-      } else {
-        // For Node.js environment create a global object named 'globalThis'.
-        if(!global.globalThis) {
-          global.globalThis = global;
-        }
-        // For Node.js make 'require' an actual global function and replace constructor to prevent
-        // it from being characterized as a Dictionary (when processing in makeStObject).
-        globalThis.require = function(name) {
-          var module = require(name);
-          Object.keys(module).forEach(function(key) {
-            // Check for classes (not 100% check, okay if we give to many objects an internal property)
-            // See also:
-            // https://stackoverflow.com/questions/40922531/how-to-check-if-a-javascript-function-is-a-constructor
-            // Assume classes have uppercase first character
-            if(key[0] >= "A" && key[0] <= "Z") {
-              var value = module[key];
-              if(value && value.constructor && value.prototype && value === value.prototype.constructor) {
-                value.__cp_className = name + "." + key;
-              }
-            }
-          });
-          return module;
-        };
-        globalThis.constructor = function() {};
-      }
+    // Helper methods for running a process synchronous (i.e. uninterrupted)
+    makeProcessSynchronous: function(process) {
+      var thisHandle = this;
+      process.isSync = true;
+      process.run = function() {
 
-      // Create global function to let objects 'identify' themselves (used for Proxy-ing JavaScript objects).
-      // For undefined or null, answer the global object itself.
-      globalThis.identity = function(x) { return x === undefined || x === null ? globalThis : x; };
+        // Make the Process active and start interpreting its code
+        var activeProcess = thisHandle.scheduler.pointers[Squeak.ProcSched_activeProcess];
+        var primHandler = thisHandle.primHandler;
+        if(activeProcess !== process) {
+          // Make sure the currently active Process is resumed immediately after the
+          // new Process has terminated/is suspended.
+          // Put the current Process at the front of the relevant Process list,
+          // so it will be made active during wakeHighestPriority() on suspension
+          // or termination of the new synchronous Process.
+          var priority = activeProcess.pointers[Squeak.Proc_priority];
+          var processList = thisHandle.scheduler.pointers[Squeak.ProcSched_processLists].pointers[priority - 1];
+          if(primHandler.isEmptyList(processList)) {
+            processList.pointers[Squeak.LinkedList_lastLink] = activeProcess;
+          } else {
+            var firstLink = processList.pointers[Squeak.LinkedList_firstLink];
+            activeProcess.pointers[Squeak.Link_nextLink] = firstLink;
+          }
+          processList.pointers[Squeak.LinkedList_firstLink] = activeProcess;
+          processList.dirty = true;
+          activeProcess.pointers[Squeak.Proc_myList] = processList;
+          activeProcess.dirty = true;
+
+          // Now transfer control to the new Process to make it active
+          primHandler.transferTo(process);
+        }
+
+        // Start the interpreter to execute the Process
+        thisHandle.vm.runInterpreter(true);
+      };
     },
+    newProcessForContext: function(context) {
+      // Create a new synchronous Process for the specified Context.
+      // Normally this Context is created from a Smalltalk Block
+      // through CpJavaScriptFunction class >> #wrap:
+      // This mechanism of wrapping Blocks in JavaScript functions
+      // allows Smalltalk Blocks to be used in callbacks or Promises.
+      // It therefore allows Smalltalk to be used inside JavaScript,
+      // next to already allowing JavaScript to be used inside Smalltalk.
+      var process = this.vm.instantiateClass(this.processClass, 0);
+      process.pointers[Squeak.Proc_priority] = this.syncProcessPriority;
+      process.pointers[Squeak.Proc_suspendedContext] = context;
+      process.dirty = true;
 
-    // Helper method for running a process uninterrupted
-    runUninterrupted: function(process) {
-      // Make specified process the new active Process (disregard Process priorities).
-      // The current active Process is maintained and restored after the new Process
-      // has finished or suspends itself.
-      var primHandler = this.primHandler;
-      var schedulerPointers = primHandler.getScheduler().pointers;
-      var activeProcess = schedulerPointers[Squeak.ProcSched_activeProcess];
-      if(activeProcess && !activeProcess.runProcess) {
-        primHandler.putToSleep(activeProcess);
-      }
-      primHandler.transferTo(process);
+      // Make the Process synchronous to prevent it being put to sleep
+      this.makeProcessSynchronous(process);
 
-      // Run the specified process until the process is finished or suspends itself.
-      // No other Process will be able to run, except for other uninterruptable Processes.
-      // This allows nested JavaScriptFunction (wrappers) to execute JavaScript code
-      // synchronously (without being pre-empted).
-      // This 'runner' assumes the process runs 'quickly'.
-      var vm = this.vm;
-      var compiled;
-      do {
-        if(compiled = vm.method.compiled) {
-          compiled(vm);
-        } else {
-          vm.interpretOneSistaWithExtensions(false, 0, 0);
-        }
-      } while(process === schedulerPointers[Squeak.ProcSched_activeProcess]);
-
-      // Restore active Process
-      if(activeProcess) {
-        primHandler.transferTo(activeProcess);
-      }
-
-      /*
-      activeProcess = schedulerPointers[Squeak.ProcSched_activeProcess];
-      if(activeProcess && activeProcess.pointers[Squeak.Proc_priority] < this.maxProcessPriority && vm.stoppedProcessLoop) {
-        globalThis.setTimeout(function() {
-          vm.runProcessLoop(true);
-        }, 0);
-      }
-      */
+      return process;
     },
 
     // Add helper method to restart process loop on semaphore update
     signalSemaphoreWithIndex: function(index) {
-      this.vm.runProcessLoop(true);
       this.primHandler.signalSemaphoreWithIndex(index);
+      this.vm.runInterpreter(true);
     },
 
     // Helper methods for creating or converting Smalltalk and JavaScript objects
@@ -163,8 +136,9 @@ function CpSystemPlugin() {
       // Keep track of SmallInteger min and max value.
       // 64-bit images have 61-bit SmallIntegers, 32-bit images have 31-bit SmallIntegers.
       // Since JavaScript only supports 53-bits integers, use that max in 64-bit images.
-      this.minSmallInteger = this.vm.image.is64Bit ? Number.MIN_SAFE_INTEGER : -0x40000000;
-      this.maxSmallInteger = this.vm.image.is64Bit ? Number.MAX_SAFE_INTEGER :  0x3FFFFFFF;
+      var is64Bit = this.vm.image.version >= 68000;
+      this.minSmallInteger = is64Bit ? Number.MIN_SAFE_INTEGER : -0x40000000;
+      this.maxSmallInteger = is64Bit ? Number.MAX_SAFE_INTEGER :  0x3FFFFFFF;
       this.primHandler.makeStObject = function(obj, proxyClass, seen) {
         // Check for special 'primitive' objects (no need to use 'seen' here)
         if(obj === undefined || obj === null) return this.vm.nilObj;
@@ -274,6 +248,8 @@ function CpSystemPlugin() {
         for(var i = 0; i < obj.length; i++) {
           array.pointers[i] = this.makeStObject(obj[i], proxyClass, seen);
         }
+        array.dirty = obj.length > 0;
+
         return array;
       };
     },
@@ -305,6 +281,8 @@ function CpSystemPlugin() {
       // Assume instVars are #key and #value (in that order)
       association.pointers[0] = this.primHandler.makeStObject(key, undefined, seen);
       association.pointers[1] = this.primHandler.makeStObject(value, undefined, seen);
+      association.dirty = true;
+
       return association;
     },
     makeStOrderedDictionary: function(obj, seen) {
@@ -315,7 +293,7 @@ function CpSystemPlugin() {
         return stObj;
       }
 
-      // Create OrederedDictionary and add it to seen collection directly, to allow internal references to be mapped correctly
+      // Create OrderedDictionary and add it to seen collection directly, to allow internal references to be mapped correctly
       var orderedDictionary = this.vm.instantiateClass(this.orderedDictionaryClass, 0);
       seen.push({ jsObj: obj, stObj: orderedDictionary });
 
@@ -326,6 +304,7 @@ function CpSystemPlugin() {
       // Create array with ordered keys
       var orderedKeys = this.primHandler.makeStArray(Object.keys(obj), undefined, seen);
       orderedDictionary.pointers[1] = orderedKeys;
+      orderedDictionary.dirty = Object.keys(obj).length > 0;
 
       return orderedDictionary;
     },
@@ -380,6 +359,8 @@ function CpSystemPlugin() {
       // Assume instVars are #tally and #array (in that order)
       dictionary.pointers[0] = keys.length;
       dictionary.pointers[1] = this.primHandler.makeStArray(associations, undefined, seen);
+      dictionary.dirty = keys.length > 0;
+
       return dictionary;
     },
     findSeenObj: function(seen, jsObj) {
@@ -450,7 +431,7 @@ function CpSystemPlugin() {
         return obj.words;
       }
 
-      return obj.asString();
+      return obj;
     },
     arrayAsJavaScriptObject: function(obj) {
       var thisHandle = this;
@@ -483,72 +464,53 @@ function CpSystemPlugin() {
 
       // Create the JavaScript function which executes the Context
       var thisHandle = this;
-      var func = function() {
+      var func = function(...args) {
 
-        // Create a copy of the Context to allow performing it multiple times.
+        // Create a copy of the Context to allow executing it multiple times.
         var context = thisHandle.vm.image.clone(obj);
 
-        // Add the Context to the function (required for JavaScriptFunction >> #arguments
-        // and JavaScriptFunction >> #setResult:)
-        func.__cp_context = context;
-
-        // Register the function arguments in the Context.
+        // Register the function arguments with the function.
         // This is used by JavaScriptFunction >> #arguments.
-        var funcArgs = Array.from(arguments);
-        var blockArgs = funcArgs.map(function(each) {
+        var blockArgs = args.map(function(each) {
           return thisHandle.primHandler.makeStObject(each);
         });
-        context.__cp_func_arguments = blockArgs;
+        func.__cp_func_arguments = blockArgs;
 
-        // Create a Process for the context
+        // Create a synchronous Process for the context
         var process = thisHandle.newProcessForContext(context);
 
-        // Run the process (now it is setup) and keep result
-        var processResult = process.runProcess();
+        // Run the process
+        process.run();
+
+        // Make sure the interpreter is restarted (after this synchronous function has returned)
+        thisHandle.vm.deferRunInterpreter();
+
+        // The result should have been stored by CpJavaScriptFunction >> #setResult:
+        // If no result is supplied yet, we're probably handling a Promise >> #await.
+        // Check if result is an error (recognized by cause, to allow functions to
+        // answer Error instances as well as throw Errors). If an error, throw it.
+        var result = func.__cp_func_result;
+        if(result === undefined) {
+          // Add a Promise to be fulfilled later as the 'temporary' result (see "primitiveJavaScriptFunctionSetResult:")
+          var resolve, reject;
+          result = func.__cp_func_result = new Promise(function(localResolve, localReject) {
+            resolve = localResolve;
+            reject = localReject;
+          });
+          func.__cp_func_result.__cp_resolve = resolve;
+          func.__cp_func_result.__cp_reject = reject;
+        }
+        var isError = result instanceof Error && result.cause && result.cause.sqClass;
 
         // Throw in case of error
-        if(processResult.error) {
-          throw processResult.error;
+        if(isError) {
+          throw result;
         }
 
-        return processResult.answer;
+        return result;
       };
 
       return func;
-    },
-    newProcessForContext: function(context, processName) {
-      // Create a new Process to execute the specified Context.
-      // Normally this Context is created from a Smalltalk Block
-      // through either CpJavaScriptFunction class >> #wrap:
-      // or in either CpEvent class >> #registerEventProcess: or
-      // CpTransition class >> #registerTransitionProcess:
-      // The mechanism of wrapping Blocks in JavaScript functions
-      // allows Smalltalk Blocks to be used in callbacks or Promises.
-      // It therefore allows Smalltalk to be used inside JavaScript,
-      // next to already allowing JavaScript to be used inside Smalltalk.
-      var process = this.vm.instantiateClass(this.processClass, 0);
-      process.pointers[Squeak.Proc_suspendedContext] = context;
-      process.pointers[Squeak.Proc_priority] = this.maxProcessPriority;
-      if(processName) {
-        process.pointers[Squeak.Proc_name] = processName;
-      }
-      var thisHandle = this;
-      process.runProcess = function() {
-
-        // Execute the Process
-        thisHandle.runUninterrupted(process);
-
-        // The result should have been stored by the CpJavaScriptFunction >> #setResult: method for
-        // synchronous results.
-        // Check if result is an error (recognized by cause, to allow functions to answer Error instances).
-        var result = context.__cp_func_result;
-        var isError = result instanceof Error && result.cause && result.cause.sqClass;
-
-        // Answer result or error
-        return isError ? { error: result } : { answer: result };
-      };
-
-      return process;
     },
     isKindOf: function(sqClass, searchClass) {
       while(sqClass && !sqClass.isNil) {
@@ -569,6 +531,16 @@ function CpSystemPlugin() {
       return value;
     },
 
+    // Perform Smalltalk code from JavaScript
+    smalltalkPerform: function(instance, selector, args) {
+      if(Function.smalltalkPerformer === undefined) {
+        console.warn("No Smalltalk performer installed yet!");
+        console.log("When trying to perform:", arguments);
+        return;
+      }
+      Function.smalltalkPerformer(instance, selector.sqClass ? selector : this.symbolFromString(selector.toString()), args === undefined || args === null ? [] : args);
+    },
+
     // Object instance methods
     "primitiveObjectTraceCr:": function(argCount) {
       if(argCount !== 1) return false;
@@ -587,6 +559,24 @@ function CpSystemPlugin() {
       var message = this.interpreterProxy.stackValue(0).asString();
       console.error((new Date()).toISOString() + " " + message);
       return this.answerSelf(argCount);
+    },
+
+    // Process instance methods
+    "primitiveProcessBeIdleProcess": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      this.vm.setIdleProcess(receiver);
+      return this.answerSelf(argCount);
+    },
+    "primitiveProcessIsSyncProcess": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      return this.answer(argCount, !!receiver.isSync);
+    },
+    "primitiveProcessAllowAwaitPromise": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      return this.answer(argCount, !receiver.failOnAwait);
     },
 
     // Symbol class methods
@@ -623,7 +613,7 @@ function CpSystemPlugin() {
     "primitiveSymbolEquals:": function(argCount) {
       if(argCount !== 1) return false;
       var otherObject = this.interpreterProxy.stackValue(0);
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var result = otherObject === receiver;
       if(!result) {
         var src = receiver.bytes || receiver.words || [];
@@ -644,7 +634,7 @@ function CpSystemPlugin() {
     },
     "primitiveSymbolIsLiteralSymbol": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var src = receiver.bytes || receiver.words || [];
       var i = 1;
       var result = src.length > 0;
@@ -669,14 +659,14 @@ function CpSystemPlugin() {
     // ByteArray instance methods
     "primitiveByteArrayAsString": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       return this.answer(argCount, receiver.asString());
     },
 
     // Number instance methods
     "primitiveNumberRaisedTo:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var exp = this.interpreterProxy.stackValue(0);
       var base = null;
       if(receiver.isFloat) {
@@ -689,7 +679,7 @@ function CpSystemPlugin() {
     },
     "primitiveNumberPrintString": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var value = null;
       if(receiver.isFloat) {
         value = receiver.float;
@@ -703,7 +693,7 @@ function CpSystemPlugin() {
       if(argCount !== 1) return false;
       var base = this.interpreterProxy.stackValue(0);
       if(typeof base !== "number" || base < 2 || base > 36) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var value = null;
       if(receiver.isFloat) {
         // Only support for floats with base 10
@@ -722,7 +712,7 @@ function CpSystemPlugin() {
     // Integer instance methods
     "primitiveIntegerAtRandom": function(argCount) {
       if(argCount !== 0) return false;
-      var upperBound = this.interpreterProxy.stackValue(argCount);
+      var upperBound = this.interpreterProxy.stackValue(0);
       if(typeof upperBound !== "number") return false;
       return this.answer(argCount, Math.floor(Math.random() * (upperBound - 1) + 1));
     },
@@ -730,7 +720,7 @@ function CpSystemPlugin() {
     // String class methods
     "primitiveStringFromWordArray:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var wordArray = this.interpreterProxy.stackValue(0);
       var src = wordArray.words || [];
       var newString = this.vm.instantiateClass(receiver, src.length);
@@ -742,6 +732,133 @@ function CpSystemPlugin() {
     },
 
     // String instance methods
+    "primitiveStringConcatenate:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(1);
+      var otherString = this.interpreterProxy.stackValue(0);
+      var first = receiver.bytes || receiver.words || [];
+      var second = otherString.bytes || otherString.words || [];
+      var isWideString = receiver.words || otherString.words || false;
+      var newString = this.vm.instantiateClass(isWideString ? this.wideStringClass : this.byteStringClass, first.length + second.length);
+      var dst = newString.bytes || newString.words;
+      var i = 0;
+      for(; i < first.length; i++) {
+        dst[i] = first[i];
+      }
+      for(var j = 0; j < second.length; j++, i++) {
+        dst[i] = second[j];
+      }
+      return this.answer(argCount, newString);
+    },
+    "primitiveStringAsciiCompare:": function(argCount) {
+      if(argCount !== 1) return false;
+      var otherString = this.interpreterProxy.stackValue(0);
+      var receiver = this.interpreterProxy.stackValue(1);
+      var src = receiver.bytes || receiver.words || [];
+      var dst = otherString.bytes || otherString.words || [];
+      var minLength = Math.min(src.length, dst.length);
+      for(var i = 0; i < minLength; i++) {
+        var cmp = src[i] - dst[i];
+        if(cmp > 0) {
+          return this.answer(argCount, 3);	// src comes after dst
+        } else if(cmp < 0) {
+          return this.answer(argCount, 1);	// src comes before dst
+        }
+      }
+      if(src.length > minLength) {
+        return this.answer(argCount, 3);	// src comes after dst (src is longer)
+      } else if(dst.length > minLength) {
+        return this.answer(argCount, 1);	// src comes before dst (src is shorter)
+      }
+      return this.answer(argCount, 2);		// src equals dst
+    },
+    "primitiveStringAsUppercase": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      var src = receiver.bytes || receiver.words || [];
+      var uppercaseString = this.vm.instantiateClass(receiver.sqClass, src.length);
+      var dst = receiver.bytes ? uppercaseString.bytes : uppercaseString.words;
+      for(var i = 0; i < src.length; i++) {
+        dst[i] = String.fromCodePoint(src[i]).toUpperCase().codePointAt(0);
+      }
+      return this.answer(argCount, uppercaseString);
+    },
+    "primitiveStringAsLowercase": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      var src = receiver.bytes || receiver.words || [];
+      var lowercaseString = this.vm.instantiateClass(receiver.sqClass, src.length);
+      var dst = receiver.bytes ? lowercaseString.bytes : lowercaseString.words;
+      for(var i = 0; i < src.length; i++) {
+        dst[i] = String.fromCodePoint(src[i]).toLowerCase().codePointAt(0);
+      }
+      return this.answer(argCount, lowercaseString);
+    },
+    "primitiveStringAsNumber": function(argCount) {
+      if(argCount !== 0) return false;
+      var result = this.stringToNumber(this.interpreterProxy.stackValue(0).asString(), true);
+      if(result === null) return false;
+      return this.answer(argCount, result);
+    },
+    "primitiveStringAsNumberOrNil": function(argCount) {
+      if(argCount !== 0) return false;
+      var result = this.stringToNumber(this.interpreterProxy.stackValue(0).asString(), false);
+      if(result === null) return false;
+      return this.answer(argCount, result);
+    },
+    "primitiveStringFindTokens:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(1);
+      var src = receiver.bytes || receiver.words || [];
+      var delimitersString = this.interpreterProxy.stackValue(0);
+      var delimiters = delimitersString.bytes || delimitersString.words || [];
+      var result = [];
+      var keyStop = 0;
+      while(keyStop < src.length) {
+        var keyStart = this.skipDelimiters(src, delimiters, keyStop);
+        keyStop = this.findDelimiters(src, delimiters, keyStart);
+        if(keyStart < keyStop) {
+          result.push(this.createSubstring(src, keyStart, keyStop));
+        }
+      }
+      return this.answer(argCount, result);
+    },
+    "primitiveStringIndexOf:": function(argCount) {
+      if(argCount !== 1) return false;
+      var character = this.interpreterProxy.stackValue(0);
+      var string = this.interpreterProxy.stackValue(1).asString();
+      return this.answer(argCount, character.sqClass === this.characterClass ? string.indexOf(String.fromCodePoint(character.hash)) + 1 : 0);
+    },
+    "primitiveStringIncludesSubstring:": function(argCount) {
+      if(argCount !== 1) return false;
+      var src = this.interpreterProxy.stackValue(1).asString();
+      var substring = this.interpreterProxy.stackValue(0).asString();
+      return this.answer(argCount, src.indexOf(substring) >= 0);
+    },
+    "primitiveStringHash": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      var src = receiver.bytes || receiver.words || [];
+      var hash = this.stringHash(src);
+      return this.answer(argCount, hash);
+    },
+    "primitiveStringTrim": function(argCount) {
+      if(argCount !== 0) return false;
+      var src = this.interpreterProxy.stackValue(0).asString();
+      return this.answer(argCount, src.trim());
+    },
+    "primitiveStringTrimLeft": function(argCount) {
+      if(argCount !== 0) return false;
+      var src = this.interpreterProxy.stackValue(0).asString();
+      return this.answer(argCount, src.trimStart());
+    },
+    "primitiveStringTrimRight": function(argCount) {
+      if(argCount !== 0) return false;
+      var src = this.interpreterProxy.stackValue(0).asString();
+      return this.answer(argCount, src.trimEnd());
+    },
+
+    // String helper methods
     skipDelimiters: function(src, delimiters, from) {
       for(;from < src.length; from++) {
         if(delimiters.indexOf(src[from]) < 0) {
@@ -777,154 +894,39 @@ function CpSystemPlugin() {
       }
       return hash;
     },
-    "primitiveStringConcatenate:": function(argCount) {
-      if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      var otherString = this.interpreterProxy.stackValue(0);
-      var first = receiver.bytes || receiver.words || [];
-      var second = otherString.bytes || otherString.words || [];
-      var isWideString = receiver.words || otherString.words || false;
-      var newString = this.vm.instantiateClass(isWideString ? this.wideStringClass : this.byteStringClass, first.length + second.length);
-      var dst = newString.bytes || newString.words;
-      var i = 0;
-      for(; i < first.length; i++) {
-        dst[i] = first[i];
-      }
-      for(var j = 0; j < second.length; j++, i++) {
-        dst[i] = second[j];
-      }
-      return this.answer(argCount, newString);
-    },
-    "primitiveStringAsciiCompare:": function(argCount) {
-      if(argCount !== 1) return false;
-      var otherString = this.interpreterProxy.stackValue(0);
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      var src = receiver.bytes || receiver.words || [];
-      var dst = otherString.bytes || otherString.words || [];
-      var minLength = Math.min(src.length, dst.length);
-      for(var i = 0; i < minLength; i++) {
-        var cmp = src[i] - dst[i];
-        if(cmp > 0) {
-          return this.answer(argCount, 3);	// src comes after dst
-        } else if(cmp < 0) {
-          return this.answer(argCount, 1);	// src comes before dst
-        }
-      }
-      if(src.length > minLength) {
-        return this.answer(argCount, 3);	// src comes after dst (src is longer)
-      } else if(dst.length > minLength) {
-        return this.answer(argCount, 1);	// src comes before dst (src is shorter)
-      }
-      return this.answer(argCount, 2);		// src equals dst
-    },
-    "primitiveStringAsUppercase": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      var src = receiver.bytes || receiver.words || [];
-      var uppercaseString = this.vm.instantiateClass(receiver.sqClass, src.length);
-      var dst = receiver.bytes ? uppercaseString.bytes : uppercaseString.words;
-      for(var i = 0; i < src.length; i++) {
-        dst[i] = String.fromCodePoint(src[i]).toUpperCase().codePointAt(0);
-      }
-      return this.answer(argCount, uppercaseString);
-    },
-    "primitiveStringAsLowercase": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      var src = receiver.bytes || receiver.words || [];
-      var lowercaseString = this.vm.instantiateClass(receiver.sqClass, src.length);
-      var dst = receiver.bytes ? lowercaseString.bytes : lowercaseString.words;
-      for(var i = 0; i < src.length; i++) {
-        dst[i] = String.fromCodePoint(src[i]).toLowerCase().codePointAt(0);
-      }
-      return this.answer(argCount, lowercaseString);
-    },
-    "primitiveStringAsNumber": function(argCount) {
-      if(argCount !== 0) return false;
-      var numberString = this.interpreterProxy.stackValue(argCount).asString();
-      var result = null;
+    stringToNumber: function(numberString, allowRadix) {
       if(numberString === "NaN") {
-        result = Number.NaN;
+        return Number.NaN;
       } else if(numberString === "Infinity") {
-        result = Number.POSITIVE_INFINITY;
+        return Number.POSITIVE_INFINITY;
       } else if(numberString === "-Infinity") {
-        result = Number.NEGATIVE_INFINITY;
+        return Number.NEGATIVE_INFINITY;
       } else {
         var numberMatch = numberString.match(/^(\d+r)?(-?\d+(?:\.\d+)?(?:e-?\d)?)$/);
         if(numberMatch) {
           if(numberMatch[1]) {
+            // Fail if radix is not allowed
+            if(!allowRadix) {
+              return null;
+            }
+
             // Currently only support for base/radix when using integers (not floats)
             var base = Number.parseInt(numberMatch[1]);
             if(base >= 2 && base <= 36 && numberMatch[2].indexOf(".") < 0 && numberMatch[2].indexOf("e") < 0) {
-              result = Number.parseInt(numberMatch[2], base);
+              return Number.parseInt(numberMatch[2], base);
             }
           } else {
-            result = +numberMatch[2];
+            return +numberMatch[2];
           }
         }
       }
-      if(result === null) return false;
-      return this.answer(argCount, result);
-    },
-    "primitiveStringFindTokens:": function(argCount) {
-      if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      var src = receiver.bytes || receiver.words || [];
-      var delimitersString = this.interpreterProxy.stackValue(0);
-      var delimiters = delimitersString.bytes || delimitersString.words || [];
-      var result = [];
-      var keyStop = 0;
-      while(keyStop < src.length) {
-        var keyStart = this.skipDelimiters(src, delimiters, keyStop);
-        keyStop = this.findDelimiters(src, delimiters, keyStart);
-        if(keyStart < keyStop) {
-          result.push(this.createSubstring(src, keyStart, keyStop));
-        }
-      }
-      return this.answer(argCount, result);
-    },
-    "primitiveStringIndexOf:": function(argCount) {
-      if(argCount !== 1) return false;
-      var character = this.interpreterProxy.stackValue(0);
-      var string = this.interpreterProxy.stackValue(argCount).asString();
-      return this.answer(argCount, character.sqClass === this.characterClass ? string.indexOf(String.fromCodePoint(character.hash)) + 1 : 0);
-    },
-    "primitiveStringIncludesSubstring:": function(argCount) {
-      if(argCount !== 1) return false;
-      var src = this.interpreterProxy.stackValue(argCount).asString();
-      var substring = this.interpreterProxy.stackValue(0).asString();
-      return this.answer(argCount, src.indexOf(substring) >= 0);
-    },
-    "primitiveStringHash": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      var src = receiver.bytes || receiver.words || [];
-      var hash = this.stringHash(src);
-      return this.answer(argCount, hash);
-    },
-    "primitiveStringTrim": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      var src = this.interpreterProxy.stackValue(argCount).asString();
-      return this.answer(argCount, src.trim());
-    },
-    "primitiveStringTrimLeft": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      var src = this.interpreterProxy.stackValue(argCount).asString();
-      return this.answer(argCount, src.trimStart());
-    },
-    "primitiveStringTrimRight": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
-      var src = this.interpreterProxy.stackValue(argCount).asString();
-      return this.answer(argCount, src.trimEnd());
+      return null;
     },
 
     // WideString class methods
     "primitiveWideStringFrom:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var srcString = this.interpreterProxy.stackValue(0);
       var src = srcString.bytes || srcString.words || [];
       var newString = this.vm.instantiateClass(receiver, src.length);
@@ -994,7 +996,7 @@ function CpSystemPlugin() {
     // JavaScriptObject instance methods
     "primitiveJavaScriptObjectApply:withArguments:resultAs:": function(argCount) {
       if(argCount !== 3) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(3);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
       var selectorName = this.interpreterProxy.stackValue(2).asString();
@@ -1021,7 +1023,7 @@ function CpSystemPlugin() {
 
           // Try selector first, if not present check if a colon is present
           // and remove it and every character after it.
-          // (E.g. setTimeout:duration: is translated into setTimeout)
+          // (E.g. setTimeout:thenDo: is translated into setTimeout)
           var selectorDescription = this.getSelectorNamed(obj, selectorName);
           if(!selectorDescription) {
             var colonIndex = selectorName.indexOf(":");
@@ -1082,7 +1084,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectPropertyAt:resultAs:": function(argCount) {
       if(argCount !== 2) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
       var propertyName = this.interpreterProxy.stackValue(1).asString();
@@ -1097,7 +1099,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectPropertyAt:put:": function(argCount) {
       if(argCount !== 2) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
       var propertyName = this.interpreterProxy.stackValue(1).asString();
@@ -1107,7 +1109,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectRawPropertyAt:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
       var propertyName = this.interpreterProxy.stackValue(0).asString();
@@ -1123,7 +1125,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectRawPropertyAt:put:": function(argCount) {
       if(argCount !== 2) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       var obj = receiver.jsObj;
       if(obj === undefined) return false;
       var propertyName = this.interpreterProxy.stackValue(1).asString();
@@ -1133,7 +1135,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectGetSelectorNames": function(argCount) {
       if(argCount !== 0) return false;
-      var obj = this.interpreterProxy.stackValue(argCount).jsObj;
+      var obj = this.interpreterProxy.stackValue(0).jsObj;
       if(obj === undefined) return false;
 
       // Add only unique names
@@ -1149,7 +1151,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectGetSelectorType:": function(argCount) {
       if(argCount !== 1) return false;
-      var obj = this.interpreterProxy.stackValue(argCount).jsObj;
+      var obj = this.interpreterProxy.stackValue(1).jsObj;
       if(obj === undefined) return false;
       var selectorName = this.interpreterProxy.stackValue(0).asString();
       if(!selectorName) return false;
@@ -1186,7 +1188,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectGetClassRefFrom:resultAs:": function(argCount) {
       if(argCount !== 2) return false;
-      var obj = this.interpreterProxy.stackValue(argCount).jsObj;
+      var obj = this.interpreterProxy.stackValue(2).jsObj;
       if(obj === undefined) return false;
       var selectorName = this.interpreterProxy.stackValue(1).asString();
       if(!selectorName) return false;
@@ -1214,7 +1216,7 @@ function CpSystemPlugin() {
     // JavaScriptClass instance methods
     "primitiveJavaScriptClassNewInstanceWithArguments:resultAs:": function(argCount) {
       if(argCount !== 2) return false;
-      var jsClass = this.interpreterProxy.stackValue(argCount).jsObj;
+      var jsClass = this.interpreterProxy.stackValue(2).jsObj;
       var args = this.asJavaScriptObject(this.interpreterProxy.stackValue(1)) || [];
       var proxyClass = this.interpreterProxy.stackValue(0);
 
@@ -1230,28 +1232,191 @@ function CpSystemPlugin() {
     },
 
     // JavaScriptFunction instance methods
-    "primitiveJavaScriptFunctionArguments": function(argCount) {
-      if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+    "primitiveJavaScriptFunctionArguments:": function(argCount) {
+      if(argCount !== 1) return false;
+      var count = this.interpreterProxy.stackValue(0);
+      var receiver = this.interpreterProxy.stackValue(1);
       var jsFunc = receiver.jsObj;
       if(!jsFunc) return false;
-      var context = receiver.jsObj.__cp_context;
-      if(!context) return false;
 
-      // Retrieve arguments from the Context instance
-      return this.answer(argCount, context.__cp_func_arguments);
+      // Retrieve arguments from the Function instance.
+      // Add 'nils' to make the appropriate size.
+      var args = jsFunc.__cp_func_arguments.slice(0, count);
+      while(args.length < count) {
+        args.push(null);
+      }
+      return this.answer(argCount, args);
+    },
+    "primitiveJavaScriptFunctionSetBlock:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(1);
+      var block = this.interpreterProxy.stackValue(0);
+      receiver.__cp_block = block;
+      return this.answerSelf(argCount);
+    },
+    "primitiveJavaScriptFunctionBlock": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      return this.answer(argCount, receiver.__cp_block);
     },
     "primitiveJavaScriptFunctionSetResult:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var jsFunc = receiver.jsObj;
       if(!jsFunc) return false;
-      var context = receiver.jsObj.__cp_context;
-      if(!context) return false;
       var result = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
 
-      // Store the result in the Context instance
-      context.__cp_func_result = result;
+      // Store the result in the Context instance or fulfill the waiting result
+      if(jsFunc.__cp_func_result && jsFunc.__cp_func_result.__cp_resolve) {
+        if(result instanceof Error && result.cause && result.cause.sqClass) {
+          jsFunc.__cp_func_result.__cp_reject(result);
+        } else {
+          jsFunc.__cp_func_result.__cp_resolve(result);
+        }
+      } else {
+        jsFunc.__cp_func_result = result;
+      }
+      return this.answerSelf(argCount);
+    },
+    "primitiveJavaScriptFunctionValue": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      var jsFunc = receiver.jsObj;
+      if(!jsFunc) return false;
+      try {
+        return this.answer(argCount, jsFunc());
+      } catch(e) {
+        this.lastException = e;
+        return false;
+      }
+    },
+    "primitiveJavaScriptFunctionValue:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(1);
+      var arg = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+      var jsFunc = receiver.jsObj;
+      if(!jsFunc) return false;
+      try {
+        return this.answer(argCount, jsFunc(arg));
+      } catch(e) {
+        this.lastException = e;
+        return false;
+      }
+    },
+    "primitiveJavaScriptFunctionValue:value:": function(argCount) {
+      if(argCount !== 2) return false;
+      var receiver = this.interpreterProxy.stackValue(2);
+      var arg1 = this.asJavaScriptObject(this.interpreterProxy.stackValue(1));
+      var arg2 = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+      var jsFunc = receiver.jsObj;
+      if(!jsFunc) return false;
+      try {
+        return this.answer(argCount, jsFunc(arg1, arg2));
+      } catch(e) {
+        this.lastException = e;
+        return false;
+      }
+    },
+    "primitiveJavaScriptFunctionValue:value:value:": function(argCount) {
+      if(argCount !== 3) return false;
+      var receiver = this.interpreterProxy.stackValue(3);
+      var arg1 = this.asJavaScriptObject(this.interpreterProxy.stackValue(2));
+      var arg2 = this.asJavaScriptObject(this.interpreterProxy.stackValue(1));
+      var arg3 = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+      var jsFunc = receiver.jsObj;
+      if(!jsFunc) return false;
+      try {
+        return this.answer(argCount, jsFunc(arg1, arg2, arg3));
+      } catch(e) {
+        this.lastException = e;
+        return false;
+      }
+    },
+    "primitiveJavaScriptFunctionValueWithArguments:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(1);
+      var args = this.asJavaScriptObject(this.interpreterProxy.stackValue(0));
+      var jsFunc = receiver.jsObj;
+      if(!jsFunc) return false;
+      try {
+        return this.answer(argCount, jsFunc(...args));
+      } catch(e) {
+        this.lastException = e;
+        return false;
+      }
+    },
+
+    // JavaScriptPromise instance methods
+    "primitiveJavaScriptPromiseThen:onRejected:": function(argCount) {
+      if(argCount !== 2) return false;
+      var receiver = this.interpreterProxy.stackValue(2);
+      var fullfilledBlock = this.interpreterProxy.stackValue(1);
+      var rejectBlock = this.interpreterProxy.stackValue(0);
+      var promise = receiver.jsObj;
+      var result = promise.then(this.asJavaScriptObject(fullfilledBlock), this.asJavaScriptObject(rejectBlock));
+      this.promiseAttachSenderMethod(result, receiver);
+      return this.answer(argCount, result);
+    },
+    "primitiveJavaScriptPromiseCatch:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(1);
+      var catchBlock = this.interpreterProxy.stackValue(0);
+      var promise = receiver.jsObj;
+      var result = promise.catch(this.asJavaScriptObject(catchBlock));
+      this.promiseAttachSenderMethod(result, receiver);
+      return this.answer(argCount, result);
+    },
+    "primitiveJavaScriptPromiseFinally:": function(argCount) {
+      if(argCount !== 1) return false;
+      var receiver = this.interpreterProxy.stackValue(1);
+      var finallyBlock = this.interpreterProxy.stackValue(0);
+      var promise = receiver.jsObj;
+      var result = promise.finally(this.asJavaScriptObject(finallyBlock));
+      this.promiseAttachSenderMethod(result, receiver);
+      return this.answer(argCount, result);
+    },
+    promiseAttachSenderMethod: function(promise, smalltalkPromise) {
+      var promiseClass = smalltalkPromise.sqClass;
+      var origPromise = smalltalkPromise.jsObj;
+      var sender = this.vm.activeContext;
+      var method;
+      do {
+        // Try next sender
+        sender = sender.pointers[Squeak.Context_sender];
+        if(!sender || sender.isNil) {
+          if(origPromise.__cp_compiled_code) {
+            // Use the originating Promise's sender
+            promise.__cp_compiled_code = origPromise.__cp_compiled_code;
+          }
+          return;
+        }
+
+        // Extract method
+        method = sender.pointers[Squeak.Context_method];
+        if(!method || method.isNil || !method.methodClassForSuper) {
+          if(origPromise.__cp_compiled_code) {
+            // Use the originating Promise's sender
+            promise.__cp_compiled_code = origPromise.__cp_compiled_code;
+          }
+          return;
+        }
+      } while(method.methodClassForSuper() === promiseClass);
+
+      // Since method can also be a CompiledBlock, store it as 'compiled_code'
+      promise.__cp_compiled_code = method;
+    },
+
+    // JavaScriptError class methods
+    "primitiveJavaScriptErrorUncaughtObject": function(argCount) {
+      if(argCount !== 0) return false;
+      var uncaught = globalThis.__cp_uncaught;
+      delete globalThis.__cp_uncaught;
+      return this.answer(argCount, uncaught);
+    },
+    "primitiveJavaScriptErrorRegisterUncaughtInstanceContext:": function(argCount) {
+      if(argCount !== 1) return false;
+      // Store the uncaught instance context in the VM
+      this.vm.uncaughtInstanceContext = this.interpreterProxy.stackValue(0);
       return this.answerSelf(argCount);
     },
 
@@ -1351,7 +1516,7 @@ function CpSystemPlugin() {
     // WebSocket instance methods
     "primitiveWebSocketConnectToUrl:withEventSemaphore:": function(argCount) {
       if(argCount !== 2) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(2);
       var url = this.interpreterProxy.stackValue(1).asString();
       var semaIndex = this.interpreterProxy.stackIntegerValue(0);
 
@@ -1398,7 +1563,7 @@ function CpSystemPlugin() {
     },
     "primitiveWebSocketReceivedMessage": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var webSocketHandle = receiver.webSocketHandle;
       if(!webSocketHandle) return false;
 
@@ -1411,7 +1576,7 @@ function CpSystemPlugin() {
     },
     "primitiveWebSocketSend:": function(argCount) {
       if(argCount !== 1) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(1);
       var sendBuffer = this.interpreterProxy.stackObjectValue(0);
       var webSocketHandle = receiver.webSocketHandle;
       if(!webSocketHandle) return false;
@@ -1431,7 +1596,7 @@ function CpSystemPlugin() {
     },
     "primitiveWebSocketReadyState": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var webSocketHandle = receiver.webSocketHandle;
       if(!webSocketHandle) return false;
 
@@ -1442,7 +1607,7 @@ function CpSystemPlugin() {
     },
     "primitiveWebSocketClose": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(argCount);
+      var receiver = this.interpreterProxy.stackValue(0);
       var webSocketHandle = receiver.webSocketHandle;
       if(!webSocketHandle) return false;
 
@@ -1463,10 +1628,76 @@ function CpSystemPlugin() {
   };
 }
 
+// Extend the Interpreter
+Object.extend(Squeak.Interpreter.prototype,
+  'syncProcess', {
+    activeProcess: function() {
+      if(!this.schedulerPointers) {
+        this.schedulerPointers = this.specialObjects[Squeak.splOb_SchedulerAssociation].pointers[Squeak.Assn_value].pointers;
+      }
+      return this.schedulerPointers[Squeak.ProcSched_activeProcess];
+    },
+    setIdleProcess: function(process) {
+      this.idleProcess = process;
+    },
+    inIdleProcess: function() {
+      // Answer whether a Process is active which is marked THE 'idle' Process.
+      // Be aware, this is not the same as using Process >> #idle in the tiny
+      // CodeParadise image. Marking a Process as the 'idle' Process will replace
+      // a previously marked Process. Use Process >> #beIdleProcess to mark it.
+      return this.idleProcess === this.activeProcess();
+    },
+    handleUncaught: function() {
+      if(!this.uncaughtInstanceContext) {
+        return;
+      }
+
+      // Create a copy of the uncaught instance context and set its sender to
+      // the activeContext, hereby making it behave as if send from that context.
+      // This means handleUncaught() should be called as soon as an uncaught
+      // Exception or unhandled Rejection is detected (see cp_interpreter.js).
+      // Otherwise the activeContext might have changed.
+      var context = this.image.clone(this.uncaughtInstanceContext);
+      context.pointers[Squeak.Context_sender] = this.activeContext;
+
+      // Create a new synchronous Process for the copied context and run it.
+      var process = Squeak.externalModules.CpSystemPlugin.newProcessForContext(context);
+      process.run();
+
+      // Restart regular interpreter loop
+      this.runInterpreter(true);
+    }
+  }
+);
+
+// Extend the Image
+Object.extend(Squeak.Image.prototype,
+  'fixes', {
+    fixFloat: function() {
+      // Hack for the tiny image in CodeParadise to keep floats alive.
+      // The tiny image does not have BoxedFloat64 and only a Float
+      // class. When saving/snapshotting an image Float will be deleted
+      // from the class table. To fix this, the class hash is set explicitly.
+      // Apart from that, snapshotting seems to work correctly, even if
+      // multiple classes are freed during snapshot (which feels awkward).
+      // Tried adding a BoxedFloat64 class, but similar issues remained.
+      // The code is added in the method initImmediateClasses() which occurs
+      // just before the mapSomeObjects() where the updated value is required.
+      this.origInitImmediateClasses = this.initImmediateClasses;
+      this.initImmediateClasses = function(oopMap, rawBits, splObs) {
+        var floatClass = oopMap.get(rawBits.get(splObs.oop)[Squeak.splOb_ClassFloat]);
+        floatClass.hash = 34;
+        floatClass.classInstProto("Float");
+        this.origInitImmediateClasses(oopMap, rawBits, splObs);
+      };
+    }
+  }
+);
+
 function registerCpSystemPlugin() {
-    if(typeof Squeak === "object" && Squeak.registerExternalModule) {
-        Squeak.registerExternalModule("CpSystemPlugin", CpSystemPlugin());
-    } else globalThis.setTimeout(registerCpSystemPlugin, 100);
+  if(typeof Squeak === "object" && Squeak.registerExternalModule) {
+    Squeak.registerExternalModule("CpSystemPlugin", CpSystemPlugin());
+  } else globalThis.setTimeout(registerCpSystemPlugin, 100);
 };
 
 registerCpSystemPlugin();

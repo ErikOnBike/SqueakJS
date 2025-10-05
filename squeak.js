@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2024 Vanessa Freudenberg
+ * Copyright (c) 2013-2025 Vanessa Freudenberg
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -55,6 +55,7 @@ import "./vm.plugins.scratch.browser.js";
 import "./vm.plugins.sound.browser.js";
 import "./plugins/ADPCMCodecPlugin.js";
 import "./plugins/B2DPlugin.js";
+import "./plugins/B3DAcceleratorPlugin.js";
 import "./plugins/BitBltPlugin.js";
 import "./plugins/CroquetPlugin.js";
 import "./plugins/FFTPlugin.js";
@@ -76,6 +77,7 @@ import "./plugins/SoundGenerationPlugin.js";
 import "./plugins/StarSqueakPlugin.js";
 import "./plugins/ZipPlugin.js";
 import "./ffi/libc.js";
+import "./ffi/opengl.js";
 import "./lib/lz-string.js";
 import "./lib/jszip.js";
 import "./lib/FileSaver.js";
@@ -128,6 +130,8 @@ function setupFullscreen(display, canvas, options) {
         display.fullscreen = fullscreen;
         var fullwindow = fullscreen || options.fullscreen;
         box.style.background = fullwindow ? 'black' : '';
+        box.style.border = fullwindow ? 'none' : '';
+        box.style.borderRadius = fullwindow ? '0px' : '';
         setTimeout(onresize, 0);
     }
 
@@ -183,10 +187,12 @@ function updateMousePos(evt, canvas, display) {
         display.cursorCanvas.style.top = (evtY + canvas.offsetTop + display.cursorOffsetY) + "px";
     }
     var x = (evtX * canvas.width / canvas.offsetWidth) | 0,
-        y = (evtY * canvas.height / canvas.offsetHeight) | 0;
+        y = (evtY * canvas.height / canvas.offsetHeight) | 0,
+        w = display.width || canvas.width,
+        h = display.height || canvas.height;
     // clamp to display size
-    display.mouseX = Math.max(0, Math.min(display.width, x));
-    display.mouseY = Math.max(0, Math.min(display.height, y));
+    display.mouseX = Math.max(0, Math.min(w, x));
+    display.mouseY = Math.max(0, Math.min(h, y));
 }
 
 function recordMouseEvent(what, evt, canvas, display, options) {
@@ -200,7 +206,7 @@ function recordMouseEvent(what, evt, canvas, display, options) {
                 case 1: buttons = Squeak.Mouse_Yellow; break;   // middle
                 case 2: buttons = Squeak.Mouse_Blue; break;     // right
             }
-            if (buttons === Squeak.Mouse_Red && (evt.altKey || evt.metaKey))
+            if (buttons === Squeak.Mouse_Red && (evt.altKey || evt.metaKey) || display.cmdButtonTouched)
                 buttons = Squeak.Mouse_Yellow; // emulate middle-click
             if (options.swapButtons)
                 if (buttons == Squeak.Mouse_Yellow) buttons = Squeak.Mouse_Blue;
@@ -343,6 +349,8 @@ function createSqueakDisplay(canvas, options) {
     if (options.fullscreen) {
         document.body.style.margin = 0;
         document.body.style.backgroundColor = 'black';
+        canvas.style.border = 'none';
+        canvas.style.borderRadius = '0px';
         document.ontouchmove = function(evt) { evt.preventDefault(); };
     }
     var display = {
@@ -1071,8 +1079,10 @@ function createSqueakDisplay(canvas, options) {
         );
     };
 
-    onresize();
-    window.onresize = onresize;
+    if (!options.embedded) {
+        onresize();
+        window.onresize = onresize;
+    }
 
     return display;
 }
@@ -1187,6 +1197,11 @@ function processOptions(options) {
     Squeak.dirCreate(root, true);
     if (!/\/$/.test(root)) root += "/";
     options.root = root;
+    if (options.w) options.fixedWidth = options.w;
+    if (options.h) options.fixedHeight = options.h;
+    if (options.fixedWidth && !options.fixedHeight) options.fixedHeight = options.fixedWidth * 3 / 4 | 0;
+    if (options.fixedHeight && !options.fixedWidth) options.fixedWidth = options.fixedHeight * 4 / 3 | 0;
+    if (options.fixedWidth && options.fixedHeight) options.fullscreen = true;
     SqueakJS.options = options;
 }
 
@@ -1220,9 +1235,16 @@ function processFile(file, display, options, thenDo) {
 }
 
 function processZip(file, display, options, thenDo) {
-    JSZip().loadAsync(file.data).then(function(zip) {
+    display.showBanner("Analyzing " + file.name);
+    JSZip.loadAsync(file.data, { createFolders: true }).then(function(zip) {
         var todo = [];
-        zip.forEach(function(filename){
+        zip.forEach(function(filename, meta) {
+            if (filename.startsWith("__MACOSX/") || filename.endsWith(".DS_Store")) return; // skip macOS metadata
+            if (meta.dir) {
+                filename = filename.replace(/\/$/, "");
+                Squeak.dirCreate(options.root + filename, true);
+                return;
+            }
             if (!options.image.name && filename.match(/\.image$/))
                 options.image.name = filename;
             if (options.forceDownload || !Squeak.fileExists(options.root + filename)) {
@@ -1305,7 +1327,7 @@ function downloadFile(file, display, options, thenDo) {
             console.error(Squeak.bytesAsString(new Uint8Array(this.response)));
             return alert("Failed to download:\n" + file.url);
         }
-        var proxy = 'https://corsproxy.io/?',
+        var proxy = Squeak.defaultCORSProxy,
             retry = new XMLHttpRequest();
         console.warn('Retrying with CORS proxy: ' + proxy + file.url);
         retry.open('GET', proxy + file.url);
@@ -1339,9 +1361,23 @@ function fetchFiles(files, display, options, thenDo) {
     getNextFile();
 }
 
-SqueakJS.runSqueak = function(imageUrl, canvas, options) {
+SqueakJS.runSqueak = function(imageUrl, canvas, options={}) {
+    if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.style.position = "absolute";
+        canvas.style.left = "0";
+        canvas.style.top = "0";
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+        document.body.appendChild(canvas);
+    }
     // we need to fetch all files first, then run the image
     processOptions(options);
+    if (imageUrl && imageUrl.endsWith(".zip")) {
+        options.zip = imageUrl.match(/[^\/]*$/)[0];
+        options.url = imageUrl.replace(/[^\/]*$/, "");
+        imageUrl = null;
+    }
     if (!imageUrl && options.image) imageUrl = options.image;
     var baseUrl = options.url || "";
     if (!baseUrl && imageUrl && imageUrl.replace(/[^\/]*$/, "")) {
@@ -1398,7 +1434,7 @@ SqueakJS.runSqueak = function(imageUrl, canvas, options) {
         var image = options.image;
         if (!image.name) return alert("could not find an image");
         if (!image.data) return alert("could not find image " + image.name);
-        SqueakJS.appName = options.appName || image.name.replace(/\.image$/, "");
+        SqueakJS.appName = options.appName || image.name.replace(/(.*\/|\.image$)/g, "");
         SqueakJS.runImage(image.data, options.root + image.name, display, options);
     });
     return display;
