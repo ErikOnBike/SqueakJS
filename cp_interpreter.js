@@ -5,7 +5,7 @@ Object.extend(Squeak,
     runImage: function(imageData, imageName) {
 
       // Show build number
-      console.log("Running SqueakJS VM (build " + Squeak.vmBuild + ")");
+      console.log("Running CodeParadise VM (build " + Squeak.vmBuild + ")");
 
       // Create Squeak image from raw data
       var image = new Squeak.Image(imageName);
