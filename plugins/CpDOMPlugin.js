@@ -409,6 +409,16 @@ function CpDOMPlugin() {
 
       return this.answerSelf(argCount);
     },
+    "primitiveDomElementMakeEmpty": function(argCount) {
+      if(argCount !== 0) return false;
+      var domElement = this.interpreterProxy.stackValue(0).domElement;
+      if(!domElement) return false;
+      var childNode;
+      while((childNode = domElement.lastChild) !== null) {
+        domElement.removeChild(childNode);
+      }
+      return this.answerSelf(argCount);
+    },
     "primitiveDomElementIsClassed:": function(argCount) {
       if(argCount !== 1) return false;
       var className = this.interpreterProxy.stackValue(0).asString();
