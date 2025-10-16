@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.3.3",
       vmDate: "2025-06-03",               // Maybe replace at build time?
-      vmBuild: "cp-20251005",                 // this too?
+      vmBuild: "cp-20251016",                 // this too?
       vmPath: "unknown",                  // Replaced at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -13545,6 +13545,16 @@
         // Ensure any WebComponents created by the markup are initialized
         this.initializePendingElements();
 
+        return this.answerSelf(argCount);
+      },
+      "primitiveDomElementMakeEmpty": function(argCount) {
+        if(argCount !== 0) return false;
+        var domElement = this.interpreterProxy.stackValue(0).domElement;
+        if(!domElement) return false;
+        var childNode;
+        while((childNode = domElement.lastChild) !== null) {
+          domElement.removeChild(childNode);
+        }
         return this.answerSelf(argCount);
       },
       "primitiveDomElementIsClassed:": function(argCount) {
