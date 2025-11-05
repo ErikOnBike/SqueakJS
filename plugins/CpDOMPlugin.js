@@ -194,6 +194,32 @@ function CpDOMPlugin() {
       });
       return domRectangle;
     },
+    allCpElementsDo: function(element, func) {
+
+      // Handle DOM element (either known by event or stored in element map)
+      if(element.__cp_element) {
+        func(element.__cp_element);
+      } else {
+        let instance = this.domElementMap.get(element);
+        if(instance) {
+          func(instance);
+        }
+      }
+
+      // If the element has a Shadow DOM iterate its DOM too
+      if(element.shadowRoot) {
+        this.allCpElementsDo(element.shadowRoot, func);
+      }
+
+      // Iterate all children for DOM elements (because of DOM manipulation and/or
+      // setting event handlers on children, such children might have become DOM
+      // elements).
+      let current = element.firstElementChild;
+      while(current) {
+        this.allCpElementsDo(current, func);
+        current = current.nextElementSibling;
+      }
+    },
 
     // DOM element class methods
     "primitiveDomElementRegisterNamespace:forPrefix:": function(argCount) {
@@ -644,7 +670,23 @@ function CpDOMPlugin() {
         });
         delete domElement.__cp_event_listeners;
       }
+      this.domElementMap.delete(domElement);
+      delete domElement.__cp_element;
       return this.answerSelf(argCount);
+    },
+    "primitiveDomElementTouchedElements": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      var domElement = receiver.domElement;
+      if(!domElement) return false;
+      var touchedElements = [];
+      this.allCpElementsDo(domElement, function(cpElement) {
+        // Add all except the receiver
+        if(cpElement !== receiver) {
+          touchedElements.push(cpElement);
+        }
+      });
+      return this.answer(argCount, touchedElements);
     },
     "primitiveDomElementApply:withArguments:": function(argCount) {
       if(argCount !== 2) return false;
