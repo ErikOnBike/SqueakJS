@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.3.3",
 	    vmDate: "2025-06-03",               // Maybe replace at build time?
-	    vmBuild: "cp-20251030",                 // this too?
+	    vmBuild: "cp-20251107",                 // this too?
 	    vmPath: "unknown",                  // Replaced at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -12548,7 +12548,7 @@ function requireVm_plugins_file_node () {
 	        try {
 	            // Node does not support ArrayBuffer and Bun does not support DataView,
 	            // use a TypedArray as argument to writeFileSync.
-	            fs.writeFileSync(fileName, new Uint8Array(buffer));
+	            fs.writeFileSync(fileName.endsWith(".image") ? fileName : fileName + ".image", new Uint8Array(buffer));
 	        } catch(e) {
 	            console.error("Failed to create file with content: " + fileName);
 	        }
@@ -14803,6 +14803,11 @@ function requireCpSystemPlugin () {
 	      this.interpreterProxy = anInterpreter;
 	      this.vm = anInterpreter.vm;
 	      this.primHandler = this.vm.primHandler;
+	      if(this.primHandler.display && globalThis.process && globalThis.process.exit) {
+	        this.primHandler.display.quitHandler = function() {
+	          globalThis.process.exit(0);
+	        };
+	      }
 	      this.characterClass = this.vm.globalNamed("Character");
 	      this.symbolClass = this.vm.globalNamed("Symbol");
 	      this.symbolTable = Object.create(null);
@@ -16505,6 +16510,24 @@ function requireCp_interpreter () {
 	hasRequiredCp_interpreter = 1;
 	// Custom interpreter for CodeParadise
 
+	class CpDisplay extends Object {
+		constructor() {
+			super();
+			this.vmOptions = [ "-vm-display-null", "-nodisplay" ];
+			this.quitHandler = null;
+		}
+
+		get quitFlag() {
+			return false;
+		}
+		set quitFlag(quit) {
+			if(quit !== true || this.quitHandler === null) {
+				return;
+			}
+			this.quitHandler();
+		}
+	}
+
 	Object.extend(Squeak,
 	  'running', {
 	    runImage: function(imageData, imageName) {
@@ -16518,7 +16541,7 @@ function requireCp_interpreter () {
 	      image.readFromBuffer(imageData, function startRunning() {
 
 	        // Create fake display and create interpreter
-	        var display = { vmOptions: [ "-vm-display-null", "-nodisplay" ] };
+	        var display = new CpDisplay();
 	        var vm = new Squeak.Interpreter(image, display);
 	        vm.interpreterRestartTimeout = null;
 	        vm.runInterpreter = function(restart) {

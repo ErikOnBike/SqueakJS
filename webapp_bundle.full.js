@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.3.3",
       vmDate: "2025-06-03",               // Maybe replace at build time?
-      vmBuild: "cp-20251030",                 // this too?
+      vmBuild: "cp-20251107",                 // this too?
       vmPath: "unknown",                  // Replaced at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -11446,6 +11446,11 @@
         this.interpreterProxy = anInterpreter;
         this.vm = anInterpreter.vm;
         this.primHandler = this.vm.primHandler;
+        if(this.primHandler.display && globalThis.process && globalThis.process.exit) {
+          this.primHandler.display.quitHandler = function() {
+            globalThis.process.exit(0);
+          };
+        }
         this.characterClass = this.vm.globalNamed("Character");
         this.symbolClass = this.vm.globalNamed("Symbol");
         this.symbolTable = Object.create(null);
@@ -13162,6 +13167,12 @@
         this.interpreterProxy = anInterpreter;
         this.vm = anInterpreter.vm;
         this.primHandler = this.vm.primHandler;
+        if(this.primHandler.display && this.primHandler.display.quitHandler === null) {
+          this.primHandler.display.quitHandler = function() {
+            window.alert("Oops...something went wrong.\nWe need to restart.");
+            window.location.reload();
+          };
+        }
         this.pointClass = this.vm.globalNamed("Point");
         this.domElementClass = null; // Only known after installation
         this.domRectangleClass = null; // Only known after installation
@@ -14538,6 +14549,24 @@
 
   // Custom interpreter for CodeParadise
 
+  class CpDisplay extends Object {
+  	constructor() {
+  		super();
+  		this.vmOptions = [ "-vm-display-null", "-nodisplay" ];
+  		this.quitHandler = null;
+  	}
+
+  	get quitFlag() {
+  		return false;
+  	}
+  	set quitFlag(quit) {
+  		if(quit !== true || this.quitHandler === null) {
+  			return;
+  		}
+  		this.quitHandler();
+  	}
+  }
+
   Object.extend(Squeak,
     'running', {
       runImage: function(imageData, imageName) {
@@ -14551,7 +14580,7 @@
         image.readFromBuffer(imageData, function startRunning() {
 
           // Create fake display and create interpreter
-          var display = { vmOptions: [ "-vm-display-null", "-nodisplay" ] };
+          var display = new CpDisplay();
           var vm = new Squeak.Interpreter(image, display);
           vm.interpreterRestartTimeout = null;
           vm.runInterpreter = function(restart) {
