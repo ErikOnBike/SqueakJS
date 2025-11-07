@@ -338,7 +338,7 @@ Object.extend(Squeak, {
         try {
             // Node does not support ArrayBuffer and Bun does not support DataView,
             // use a TypedArray as argument to writeFileSync.
-            fs.writeFileSync(fileName, new Uint8Array(buffer));
+            fs.writeFileSync(fileName.endsWith(".image") ? fileName : fileName + ".image", new Uint8Array(buffer));
         } catch(e) {
             console.error("Failed to create file with content: " + fileName);
         }

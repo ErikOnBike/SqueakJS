@@ -10,6 +10,11 @@ function CpSystemPlugin() {
       this.interpreterProxy = anInterpreter;
       this.vm = anInterpreter.vm;
       this.primHandler = this.vm.primHandler;
+      if(this.primHandler.display && globalThis.process && globalThis.process.exit) {
+        this.primHandler.display.quitHandler = function() {
+          globalThis.process.exit(0);
+        };
+      }
       this.characterClass = this.vm.globalNamed("Character");
       this.symbolClass = this.vm.globalNamed("Symbol");
       this.symbolTable = Object.create(null);

@@ -1,5 +1,23 @@
 // Custom interpreter for CodeParadise
 
+class CpDisplay extends Object {
+	constructor() {
+		super();
+		this.vmOptions = [ "-vm-display-null", "-nodisplay" ];
+		this.quitHandler = null;
+	}
+
+	get quitFlag() {
+		return false;
+	}
+	set quitFlag(quit) {
+		if(quit !== true || this.quitHandler === null) {
+			return;
+		}
+		this.quitHandler();
+	}
+}
+
 Object.extend(Squeak,
   'running', {
     runImage: function(imageData, imageName) {
@@ -13,7 +31,7 @@ Object.extend(Squeak,
       image.readFromBuffer(imageData, function startRunning() {
 
         // Create fake display and create interpreter
-        var display = { vmOptions: [ "-vm-display-null", "-nodisplay" ] };
+        var display = new CpDisplay();
         var vm = new Squeak.Interpreter(image, display);
         vm.interpreterRestartTimeout = null;
         vm.runInterpreter = function(restart) {

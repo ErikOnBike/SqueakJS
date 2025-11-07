@@ -24,6 +24,12 @@ function CpDOMPlugin() {
       this.interpreterProxy = anInterpreter;
       this.vm = anInterpreter.vm;
       this.primHandler = this.vm.primHandler;
+      if(this.primHandler.display && this.primHandler.display.quitHandler === null) {
+        this.primHandler.display.quitHandler = function() {
+          window.alert("Oops...something went wrong.\nWe need to restart.");
+          window.location.reload();
+        };
+      }
       this.pointClass = this.vm.globalNamed("Point");
       this.domElementClass = null; // Only known after installation
       this.domRectangleClass = null; // Only known after installation
