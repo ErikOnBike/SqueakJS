@@ -997,6 +997,13 @@ function CpSystemPlugin() {
 
       return this.globalProxyClasses[proxyClassName];
     },
+    "primitiveJavaScriptObjectGlobal": function(argCount) {
+      if(argCount !== 0) return false;
+      var receiver = this.interpreterProxy.stackValue(0);
+      var global = this.vm.instantiateClass(receiver, 0);
+      global.jsObj = globalThis;
+      return this.answer(argCount, global);
+    },
 
     // JavaScriptObject instance methods
     "primitiveJavaScriptObjectApply:withArguments:resultAs:": function(argCount) {
