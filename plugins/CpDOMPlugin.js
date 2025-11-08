@@ -713,6 +713,17 @@ function CpDOMPlugin() {
       var proxyClass = this.interpreterProxy.stackValue(0);
       return this.domElementApply(argCount, domElement, functionName, functionArguments, proxyClass);
     },
+    "primitiveDomElementPrivateAttachToId:": function(argCount) {
+      if(argCount !== 1) return false;
+      var id = this.interpreterProxy.stackValue(0).asString();
+      if(!id) return false;
+      var receiver = this.interpreterProxy.stackValue(argCount);
+      var domElement = document.getElementById(id);
+      if(!domElement) return false;
+      receiver.domElement = domElement;
+      this.domElementMap.set(domElement, receiver);
+      return this.answerSelf(argCount);
+    },
 
     // Helper method for CpDomElement
     domElementApply: function(argCount, domElement, functionName, functionArguments, proxyClass) {
