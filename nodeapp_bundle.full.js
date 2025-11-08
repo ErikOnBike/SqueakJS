@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.3.3",
 	    vmDate: "2025-06-03",               // Maybe replace at build time?
-	    vmBuild: "cp-20251107",                 // this too?
+	    vmBuild: "cp-20251108",                 // this too?
 	    vmPath: "unknown",                  // Replaced at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -15789,6 +15789,13 @@ function requireCpSystemPlugin () {
 	      }
 
 	      return this.globalProxyClasses[proxyClassName];
+	    },
+	    "primitiveJavaScriptObjectGlobal": function(argCount) {
+	      if(argCount !== 0) return false;
+	      var receiver = this.interpreterProxy.stackValue(0);
+	      var global = this.vm.instantiateClass(receiver, 0);
+	      global.jsObj = globalThis;
+	      return this.answer(argCount, global);
 	    },
 
 	    // JavaScriptObject instance methods
