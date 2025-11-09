@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.3.3",
 	    vmDate: "2025-06-03",               // Maybe replace at build time?
-	    vmBuild: "cp-20251108",                 // this too?
+	    vmBuild: "cp-20251109",                 // this too?
 	    vmPath: "unknown",                  // Replaced at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -17228,6 +17228,17 @@ function requireCpDOMPlugin () {
 	      var functionArguments = this.systemPlugin.asJavaScriptObject(this.interpreterProxy.stackValue(1)) || [];
 	      var proxyClass = this.interpreterProxy.stackValue(0);
 	      return this.domElementApply(argCount, domElement, functionName, functionArguments, proxyClass);
+	    },
+	    "primitiveDomElementPrivateAttachToId:": function(argCount) {
+	      if(argCount !== 1) return false;
+	      var id = this.interpreterProxy.stackValue(0).asString();
+	      if(!id) return false;
+	      var receiver = this.interpreterProxy.stackValue(argCount);
+	      var domElement = document.getElementById(id);
+	      if(!domElement) return false;
+	      receiver.domElement = domElement;
+	      this.domElementMap.set(domElement, receiver);
+	      return this.answerSelf(argCount);
 	    },
 
 	    // Helper method for CpDomElement
