@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.3.3",
       vmDate: "2025-06-03",               // Maybe replace at build time?
-      vmBuild: "cp-20251108",                 // this too?
+      vmBuild: "cp-20251112",                 // this too?
       vmPath: "unknown",                  // Replaced at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -11654,7 +11654,7 @@
           }
 
           // Dictionary like objects (make exception for the global object)
-          if((obj.constructor === Object && !thisHandle.hasFunctions(obj)) || (obj.constructor === undefined && typeof obj === "object")) {
+          if(proxyClass === this.dictionaryClass || proxyClass === this.orderedDictionaryClass || (obj.constructor === Object && !thisHandle.hasFunctions(obj)) || (obj.constructor === undefined && typeof obj === "object")) {
             return thisHandle.makeStOrderedDictionary(obj, seen);
           }
 
