@@ -12513,8 +12513,8 @@
         }
 
         // Proxy the result, if so requested
-        if(result !== undefined && result !== null && !proxyClass.isNil) {
-          result = this.primHandler.makeStObject(result, proxyClass);
+        if(!proxyClass.isNil) {
+          result = this.resultAs(result, proxyClass);
         }
         return this.answer(argCount, result);
       },
@@ -12542,8 +12542,8 @@
         var propertyName = this.interpreterProxy.stackValue(1).asString();
         var proxyClass = this.interpreterProxy.stackValue(0);
         var result = obj[propertyName];
-        if(result !== undefined && result !== null && !proxyClass.isNil) {
-          result = this.primHandler.makeStObject(result, proxyClass);
+        if(!proxyClass.isNil) {
+          result = this.resultAs(result, proxyClass);
         }
         return this.answer(argCount, result);
       },
@@ -12651,6 +12651,20 @@
         var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
         proxyInstance.jsObj = objClass;
         return this.answer(argCount, proxyInstance);
+      },
+      resultAs: function(result, proxyClass) {
+        if(result === undefined || result === null) {
+          return result;
+        }
+        if(proxyClass === this.dictionaryClass) {
+          return this.makeStDictionary(result);
+        }
+        if(proxyClass === this.orderedDictionaryClass) {
+          return this.makeStOrderedDictionary(result);
+        }
+        var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
+        proxyInstance.jsObj = result;
+        return proxyInstance;
       },
       getSelectorNamed: function(obj, selectorName) {
         var selectorDescription = undefined;
