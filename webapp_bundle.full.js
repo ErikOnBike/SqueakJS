@@ -11654,13 +11654,7 @@
           }
 
           // Dictionary like objects (make exception for the global object)
-          if(proxyClass === thisHandle.dictionaryClass) {
-            return thisHandle.makeStDictionary(obj, seen);
-          }
-          if(proxyClass === thisHandle.orderedDictionaryClass) {
-            return thisHandle.makeStOrderedDictionary(obj, seen);
-          }
-          if(!proxyClass && ((obj.constructor === Object && !thisHandle.hasFunctions(obj)) || (obj.constructor === undefined && typeof obj === "object"))) {
+          if((obj.constructor === Object && !thisHandle.hasFunctions(obj)) || (obj.constructor === undefined && typeof obj === "object")) {
             return thisHandle.makeStOrderedDictionary(obj, seen);
           }
 
