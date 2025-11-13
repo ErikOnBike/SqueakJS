@@ -12508,7 +12508,7 @@
 
         // Proxy the result, if so requested
         if(result !== undefined && result !== null && !proxyClass.isNil) {
-          result = this.makeStObject(result, proxyClass);
+          result = this.primHandler.makeStObject(result, proxyClass);
         }
         return this.answer(argCount, result);
       },
@@ -12537,7 +12537,7 @@
         var proxyClass = this.interpreterProxy.stackValue(0);
         var result = obj[propertyName];
         if(result !== undefined && result !== null && !proxyClass.isNil) {
-          result = this.makeStObject(result, proxyClass);
+          result = this.primHandler.makeStObject(result, proxyClass);
         }
         return this.answer(argCount, result);
       },
