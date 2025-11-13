@@ -15032,7 +15032,7 @@ function requireCpSystemPlugin () {
 	    },
 	    updateMakeStArray: function() {
 	      var thisHandle = this;
-	        this.primHandler.makeStArray = function(obj, proxyClass, seen) {
+	      this.primHandler.makeStArray = function(obj, proxyClass, seen) {
 	        // Check if obj is already known
 	        seen = seen || [];
 	        var stObj = thisHandle.findSeenObj(seen, obj);
@@ -15096,7 +15096,7 @@ function requireCpSystemPlugin () {
 	      seen.push({ jsObj: obj, stObj: orderedDictionary });
 
 	      // Create dictionary with the content
-	      var dictionary = this.makeStDictionary(obj, []);  // Do not provide seen values, because a unique needs to be created
+	      var dictionary = this.makeStDictionary(obj, []);  // Do not provide seen values, because a unique value needs to be created
 	      orderedDictionary.pointers[0] = dictionary;
 
 	      // Create array with ordered keys
@@ -15865,9 +15865,7 @@ function requireCpSystemPlugin () {
 
 	      // Proxy the result, if so requested
 	      if(result !== undefined && result !== null && !proxyClass.isNil) {
-	        var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
-	        proxyInstance.jsObj = result;
-	        result = proxyInstance;
+	        result = this.makeStObject(result, proxyClass);
 	      }
 	      return this.answer(argCount, result);
 	    },
@@ -15896,9 +15894,7 @@ function requireCpSystemPlugin () {
 	      var proxyClass = this.interpreterProxy.stackValue(0);
 	      var result = obj[propertyName];
 	      if(result !== undefined && result !== null && !proxyClass.isNil) {
-	        var proxyInstance = this.vm.instantiateClass(proxyClass, 0);
-	        proxyInstance.jsObj = result;
-	        result = proxyInstance;
+	        result = this.makeStObject(result, proxyClass);
 	      }
 	      return this.answer(argCount, result);
 	    },
