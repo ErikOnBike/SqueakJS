@@ -218,7 +218,7 @@ function CpSystemPlugin() {
         }
 
         // Dictionary like objects (make exception for the global object)
-        if(proxyClass === this.dictionaryClass || proxyClass === this.orderedDictionaryClass || (obj.constructor === Object && !thisHandle.hasFunctions(obj)) || (obj.constructor === undefined && typeof obj === "object")) {
+        if(proxyClass === thisHandle.dictionaryClass || proxyClass === thisHandle.orderedDictionaryClass || (obj.constructor === Object && !thisHandle.hasFunctions(obj)) || (obj.constructor === undefined && typeof obj === "object")) {
           return thisHandle.makeStOrderedDictionary(obj, seen);
         }
 
