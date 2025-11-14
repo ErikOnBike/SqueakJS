@@ -999,10 +999,7 @@ function CpSystemPlugin() {
     },
     "primitiveJavaScriptObjectGlobal": function(argCount) {
       if(argCount !== 0) return false;
-      var receiver = this.interpreterProxy.stackValue(0);
-      var global = this.vm.instantiateClass(receiver, 0);
-      global.jsObj = globalThis;
-      return this.answer(argCount, global);
+      return this.answer(argCount, globalThis);
     },
 
     // JavaScriptObject instance methods
