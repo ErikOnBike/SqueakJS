@@ -217,9 +217,20 @@ function CpSystemPlugin() {
           }
         }
 
-        // Dictionary like objects (make exception for the global object)
-        if((obj.constructor === Object && !thisHandle.hasFunctions(obj)) || (obj.constructor === undefined && typeof obj === "object")) {
-          return thisHandle.makeStOrderedDictionary(obj, seen);
+        // Dictionary like objects (or explicit request for Dictionary result)
+        if(proxyClass) {
+          if(proxyClass === thisHandle.dictionaryClass) {
+            return thisHandle.makeStDictionary(obj, seen);
+          }
+          if(proxyClass === thisHandle.orderedDictionaryClass) {
+            return thisHandle.makeStOrderedDictionary(obj, seen);
+          }
+        } else {
+          // Ensure the global object does not match here
+          // (since it has Object as constructor AND has functions it will not match)
+          if((obj.constructor === Object && !thisHandle.hasFunctions(obj)) || (obj.constructor === undefined && typeof obj === "object")) {
+            return thisHandle.makeStOrderedDictionary(obj, seen);
+          }
         }
 
         // Wrap in JS proxy instance if so requested or when global proxy class is registered
