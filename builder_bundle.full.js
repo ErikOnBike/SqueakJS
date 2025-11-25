@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.3.3",
 	    vmDate: "2025-06-03",               // Maybe replace at build time?
-	    vmBuild: "cp-20251114",                 // this too?
+	    vmBuild: "cp-20251125",                 // this too?
 	    vmPath: "unknown",                  // Replaced at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -18167,6 +18167,13 @@ function requireVm_plugins_webapp_builder () {
 		}
 	};
 
+	globalThis.Navigator = class extends Object {
+		constructor() {
+			super();
+			this.language = 'en';
+		}
+	};
+
 	globalThis.Storage = class extends Object {
 		constructor() {
 			super();
@@ -18218,6 +18225,7 @@ function requireVm_plugins_webapp_builder () {
 			this.customElements = new CustomElementRegistry();
 			this.document = new Document();
 			this.localStorage = new Storage();
+			this.navigator = new Navigator();
 		}
 
 		// Methods
