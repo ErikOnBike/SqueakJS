@@ -208,6 +208,13 @@ globalThis.Document = class extends HTMLElement {
 	}
 };
 
+globalThis.Navigator = class extends Object {
+	constructor() {
+		super();
+		this.language = 'en';
+	}
+};
+
 globalThis.Storage = class extends Object {
 	constructor() {
 		super();
@@ -259,6 +266,7 @@ globalThis.Window = class extends Object {
 		this.customElements = new CustomElementRegistry();
 		this.document = new Document();
 		this.localStorage = new Storage();
+		this.navigator = new Navigator();
 	}
 
 	// Methods
