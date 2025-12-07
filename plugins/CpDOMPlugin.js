@@ -660,7 +660,7 @@ function CpDOMPlugin() {
       if(!childElement) return false;
       var domElement = this.interpreterProxy.stackValue(1).domElement;
       if(!domElement) return false;
-      if(childElement.parentNode !== domElement) return false;
+      if(!(childElement.parentNode === domElement || (childElement.parentNode === null && childElement.getRootNode().host === domElement))) return false;
       domElement.removeChild(childElement);
       return this.answer(argCount, childInstance);
     },
