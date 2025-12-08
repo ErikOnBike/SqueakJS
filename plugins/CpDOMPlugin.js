@@ -687,8 +687,8 @@ function CpDOMPlugin() {
       if(!domElement) return false;
       var touchedElements = [];
       this.allCpElementsDo(domElement, function(cpElement) {
-        // Add all except the receiver and shadow roots
-        if(cpElement !== receiver && cpElement.domElement.activeElement === undefined) {
+        // Add all except the receiver
+        if(cpElement !== receiver) {
           touchedElements.push(cpElement);
         }
       });
