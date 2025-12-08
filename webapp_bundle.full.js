@@ -126,7 +126,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.3.3",
       vmDate: "2025-06-03",               // Maybe replace at build time?
-      vmBuild: "cp-20251207",                 // this too?
+      vmBuild: "cp-20251208",                 // this too?
       vmPath: "unknown",                  // Replaced at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -13855,8 +13855,8 @@
         if(!domElement) return false;
         var touchedElements = [];
         this.allCpElementsDo(domElement, function(cpElement) {
-          // Add all except the receiver
-          if(cpElement !== receiver) {
+          // Add all except the receiver and shadow roots
+          if(cpElement !== receiver && cpElement.activeElement === undefined) {
             touchedElements.push(cpElement);
           }
         });
