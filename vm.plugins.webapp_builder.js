@@ -266,7 +266,6 @@ globalThis.Window = class extends Object {
 		this.customElements = new CustomElementRegistry();
 		this.document = new Document();
 		this.localStorage = new Storage();
-		this.navigator = new Navigator();
 	}
 
 	// Methods

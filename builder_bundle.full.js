@@ -2928,12 +2928,12 @@ function requireSha1 () {
 		    return buffer;
 		  };
 
-		  var exports = createMethod();
+		  var exports$1 = createMethod();
 
 		  if (COMMON_JS) {
-		    module.exports = exports;
+		    module.exports = exports$1;
 		  } else {
-		    root.sha1 = exports;
+		    root.sha1 = exports$1;
 		  }
 		})(); 
 	} (sha1));
@@ -2974,7 +2974,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.3.3",
 	    vmDate: "2025-06-03",               // Maybe replace at build time?
-	    vmBuild: "cp-20251125",                 // this too?
+	    vmBuild: "cp-20260418",                 // this too?
 	    vmPath: "unknown",                  // Replaced at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -17194,7 +17194,7 @@ function requireCpDOMPlugin () {
 	      if(!childElement) return false;
 	      var domElement = this.interpreterProxy.stackValue(1).domElement;
 	      if(!domElement) return false;
-	      if(childElement.parentNode !== domElement) return false;
+	      if(!(childElement.parentNode === domElement || (childElement.parentNode === null && childElement.getRootNode().host === domElement))) return false;
 	      domElement.removeChild(childElement);
 	      return this.answer(argCount, childInstance);
 	    },
@@ -18225,7 +18225,6 @@ function requireVm_plugins_webapp_builder () {
 			this.customElements = new CustomElementRegistry();
 			this.document = new Document();
 			this.localStorage = new Storage();
-			this.navigator = new Navigator();
 		}
 
 		// Methods
