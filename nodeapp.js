@@ -27,19 +27,14 @@ if(!fullName) {
 var root = path.dirname(fullName) + path.sep;
 var imageName = path.basename(fullName, ".image");
 
-// Add a sessionStorage class
-class SessionStorage {
-  storage = {}
+// Add a Storage class
+class Storage extends Object {
 
   constructor() {
-    var self = this;
-    Object.keys(process.env).forEach(function(key) {
-      self.storage[key] = process.env[key];
-    });
-
-    // Set environment version (monotonic increasing counter, expecting exact match on server)
-    this.storage["CLIENT_VERSION"] = "9";
+    super();
+    this.storage = {};
   }
+
   getItem(name) {
     return this.storage[name];
   }
@@ -57,11 +52,23 @@ class SessionStorage {
   }
 }
 
+// Create Storage instances
+const sessionStorage = new Storage();
+const localStorage = new Storage();
+
+// Add process environment to sessionStorage
+Object.keys(process.env).forEach(function(key) {
+	sessionStorage.setItem(key, process.env[key]);
+});
+
+// Set environment version (monotonic increasing counter, expecting exact match on server)
+this.storage["CLIENT_VERSION"] = "9";
+
 // Extend the global scope with a few browser classes and methods
 require("./cp_globals.js");
 Object.assign(globalThis, {
-  localStorage: {},
-  sessionStorage: new SessionStorage(),
+  localStorage: localStorage,
+  sessionStorage: sessionStorage,
   WebSocket: typeof WebSocket === "undefined" ? require("./lib_node/WebSocket") : WebSocket,
   sha1: require("./lib/sha1"),
   btoa: function(string) {

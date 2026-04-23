@@ -37,7 +37,7 @@ function requireCp_globals () {
 	    if(!window.globalThis) {
 	      window.globalThis = window;
 	    }
-	  } else {
+	  } else if(typeof commonjsGlobal !== 'undefined') {
 	    // For Node.js environment create a global object named 'globalThis'.
 	    if(!commonjsGlobal.globalThis) {
 	      commonjsGlobal.globalThis = commonjsGlobal;
@@ -63,6 +63,11 @@ function requireCp_globals () {
 	    // For Node.js replace the global object constructor to prevent it from being characterized
 	    // as a Dictionary (when processing in makeStObject).
 	    globalThis.constructor = function() {};
+	  } else {
+	    // For (Web) Worker environment create global object named globalThis
+	    if(!self.globalThis) {
+	      self.globalThis = self;
+	    }
 	  }
 
 	  // Create global function to let objects 'identify' themselves (used for Proxy-ing JavaScript objects).
@@ -2974,7 +2979,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.3.3",
 	    vmDate: "2025-06-03",               // Maybe replace at build time?
-	    vmBuild: "cp-20260418",                 // this too?
+	    vmBuild: "cp-20260423",                 // this too?
 	    vmPath: "unknown",                  // Replaced at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -15781,7 +15786,7 @@ function requireCpSystemPlugin () {
 	        // Find Proxy Class for the specified JavaScript object (only exact match)
 	        proxyClassName = proxyClassNames.find(function(name) {
 	          // Either the actual class has received explicit class name or it is found in the global object
-	          return jsClass.__cp_className === name || globalThis[name] === jsClass;
+	          return jsClass.name === name || jsClass.__cp_className === name || globalThis[name] === jsClass;
 	        });
 
 	        // Try the superclass
@@ -16690,19 +16695,14 @@ if(!fullName) {
 var root = path.dirname(fullName) + path.sep;
 var imageName = path.basename(fullName, ".image");
 
-// Add a sessionStorage class
-class SessionStorage {
-  storage = {}
+// Add a Storage class
+class Storage extends Object {
 
   constructor() {
-    var self = this;
-    Object.keys(process$1.env).forEach(function(key) {
-      self.storage[key] = process$1.env[key];
-    });
-
-    // Set environment version (monotonic increasing counter, expecting exact match on server)
-    this.storage["CLIENT_VERSION"] = "9";
+    super();
+    this.storage = {};
   }
+
   getItem(name) {
     return this.storage[name];
   }
@@ -16720,11 +16720,23 @@ class SessionStorage {
   }
 }
 
+// Create Storage instances
+const sessionStorage = new Storage();
+const localStorage = new Storage();
+
+// Add process environment to sessionStorage
+Object.keys(process$1.env).forEach(function(key) {
+	sessionStorage.setItem(key, process$1.env[key]);
+});
+
+// Set environment version (monotonic increasing counter, expecting exact match on server)
+commonjsGlobal.storage["CLIENT_VERSION"] = "9";
+
 // Extend the global scope with a few browser classes and methods
 requireCp_globals();
 Object.assign(globalThis, {
-  localStorage: {},
-  sessionStorage: new SessionStorage(),
+  localStorage: localStorage,
+  sessionStorage: sessionStorage,
   WebSocket: typeof WebSocket === "undefined" ? requireWebSocket() : WebSocket,
   sha1: requireSha1(),
   btoa: function(string) {

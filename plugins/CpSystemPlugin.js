@@ -988,7 +988,7 @@ function CpSystemPlugin() {
         // Find Proxy Class for the specified JavaScript object (only exact match)
         proxyClassName = proxyClassNames.find(function(name) {
           // Either the actual class has received explicit class name or it is found in the global object
-          return jsClass.__cp_className === name || globalThis[name] === jsClass;
+          return jsClass.name === name || jsClass.__cp_className === name || globalThis[name] === jsClass;
         });
 
         // Try the superclass

@@ -37,7 +37,7 @@ function requireCp_globals () {
 	    if(!window.globalThis) {
 	      window.globalThis = window;
 	    }
-	  } else {
+	  } else if(typeof commonjsGlobal !== 'undefined') {
 	    // For Node.js environment create a global object named 'globalThis'.
 	    if(!commonjsGlobal.globalThis) {
 	      commonjsGlobal.globalThis = commonjsGlobal;
@@ -63,6 +63,11 @@ function requireCp_globals () {
 	    // For Node.js replace the global object constructor to prevent it from being characterized
 	    // as a Dictionary (when processing in makeStObject).
 	    globalThis.constructor = function() {};
+	  } else {
+	    // For (Web) Worker environment create global object named globalThis
+	    if(!self.globalThis) {
+	      self.globalThis = self;
+	    }
 	  }
 
 	  // Create global function to let objects 'identify' themselves (used for Proxy-ing JavaScript objects).
@@ -2974,7 +2979,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.3.3",
 	    vmDate: "2025-06-03",               // Maybe replace at build time?
-	    vmBuild: "cp-20260418",                 // this too?
+	    vmBuild: "cp-20260423",                 // this too?
 	    vmPath: "unknown",                  // Replaced at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -15781,7 +15786,7 @@ function requireCpSystemPlugin () {
 	        // Find Proxy Class for the specified JavaScript object (only exact match)
 	        proxyClassName = proxyClassNames.find(function(name) {
 	          // Either the actual class has received explicit class name or it is found in the global object
-	          return jsClass.__cp_className === name || globalThis[name] === jsClass;
+	          return jsClass.name === name || jsClass.__cp_className === name || globalThis[name] === jsClass;
 	        });
 
 	        // Try the superclass

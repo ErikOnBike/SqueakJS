@@ -12,7 +12,7 @@
     if(!window.globalThis) {
       window.globalThis = window;
     }
-  } else {
+  } else if(typeof global !== 'undefined') {
     // For Node.js environment create a global object named 'globalThis'.
     if(!global.globalThis) {
       global.globalThis = global;
@@ -38,6 +38,11 @@
     // For Node.js replace the global object constructor to prevent it from being characterized
     // as a Dictionary (when processing in makeStObject).
     globalThis.constructor = function() {};
+  } else {
+    // For (Web) Worker environment create global object named globalThis
+    if(!self.globalThis) {
+      self.globalThis = self;
+    }
   }
 
   // Create global function to let objects 'identify' themselves (used for Proxy-ing JavaScript objects).

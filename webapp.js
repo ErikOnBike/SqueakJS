@@ -37,7 +37,7 @@ window.addEventListener("unhandledrejection", function(event) {
 Object.extend(Squeak, {
   vmPath: "/",
   platformSubtype: "Browser",
-  osVersion: window.navigator.userAgent,
+  osVersion: globalThis.navigator.userAgent,
   windowSystem: "CodeParadise",
   fetchImageAndRun: function(imageName) {
     globalThis.fetch(imageName, {
