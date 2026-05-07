@@ -2979,7 +2979,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.3.3",
 	    vmDate: "2025-06-03",               // Maybe replace at build time?
-	    vmBuild: "cp-20260423",                 // this too?
+	    vmBuild: "cp-20260424",                 // this too?
 	    vmPath: "unknown",                  // Replaced at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -16677,11 +16677,19 @@ var path = require$$1$1;
 // Store the uncaught exception and start the Smalltalk uncaught handler.
 process$1.on("uncaughtException", function(error) {
   globalThis.__cp_uncaught = { error: error };
-  Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+  if(typeof Squeak !== 'undefined') {
+    Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+  } else {
+    console.error(globalThis.__cp_uncaught);
+  }
 });
 process$1.on("unhandledRejection", function(reason, promise) {
   globalThis.__cp_uncaught = { reason: reason, promise: promise, compiledCode: promise.__cp_compiled_code };
-  Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+  if(typeof Squeak !== 'undefined') {
+    Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+  } else {
+    console.error(globalThis.__cp_uncaught);
+  }
 });
 
 // Retrieve image name and parameters from command line
@@ -16730,7 +16738,7 @@ Object.keys(process$1.env).forEach(function(key) {
 });
 
 // Set environment version (monotonic increasing counter, expecting exact match on server)
-commonjsGlobal.storage["CLIENT_VERSION"] = "9";
+sessionStorage.setItem("CLIENT_VERSION", "9");
 
 // Extend the global scope with a few browser classes and methods
 requireCp_globals();

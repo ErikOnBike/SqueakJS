@@ -9,11 +9,19 @@ var path = require("path");
 // Store the uncaught exception and start the Smalltalk uncaught handler.
 process.on("uncaughtException", function(error) {
   globalThis.__cp_uncaught = { error: error };
-  Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+  if(typeof Squeak !== 'undefined') {
+    Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+  } else {
+    console.error(globalThis.__cp_uncaught);
+  }
 });
 process.on("unhandledRejection", function(reason, promise) {
   globalThis.__cp_uncaught = { reason: reason, promise: promise, compiledCode: promise.__cp_compiled_code };
-  Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+  if(typeof Squeak !== 'undefined') {
+    Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+  } else {
+    console.error(globalThis.__cp_uncaught);
+  }
 });
 
 // Retrieve image name and parameters from command line
@@ -62,7 +70,7 @@ Object.keys(process.env).forEach(function(key) {
 });
 
 // Set environment version (monotonic increasing counter, expecting exact match on server)
-this.storage["CLIENT_VERSION"] = "9";
+sessionStorage.setItem("CLIENT_VERSION", "9");
 
 // Extend the global scope with a few browser classes and methods
 require("./cp_globals.js");
