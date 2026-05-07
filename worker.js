@@ -51,7 +51,7 @@ const localStorage = new Storage();
 sessionStorage.setItem("SERVER_URL", globalThis.location.protocol.replace("http", "ws") + "//" + globalThis.location.host + "/io");
 
 // Set environment version (monotonic increasing counter, expecting exact match on server)
-sessionStorage.setItem("CLIENT_VERSION", "9");
+sessionStorage.setItem("CLIENT_VERSION", "10");
 
 // Override any setting from the worker's location (query parameters)
 const searchParams = new URLSearchParams(globalThis.location.search);

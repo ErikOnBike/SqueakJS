@@ -70,7 +70,7 @@ Object.keys(process.env).forEach(function(key) {
 });
 
 // Set environment version (monotonic increasing counter, expecting exact match on server)
-sessionStorage.setItem("CLIENT_VERSION", "9");
+sessionStorage.setItem("CLIENT_VERSION", "10");
 
 // Extend the global scope with a few browser classes and methods
 require("./cp_globals.js");

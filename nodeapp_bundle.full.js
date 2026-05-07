@@ -2979,7 +2979,7 @@ function requireVm () {
 	    // system attributes
 	    vmVersion: "SqueakJS 1.3.3",
 	    vmDate: "2025-06-03",               // Maybe replace at build time?
-	    vmBuild: "cp-20260424",                 // this too?
+	    vmBuild: "cp-20260507",                 // this too?
 	    vmPath: "unknown",                  // Replaced at runtime
 	    vmFile: "vm.js",
 	    vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -16738,7 +16738,7 @@ Object.keys(process$1.env).forEach(function(key) {
 });
 
 // Set environment version (monotonic increasing counter, expecting exact match on server)
-sessionStorage.setItem("CLIENT_VERSION", "9");
+sessionStorage.setItem("CLIENT_VERSION", "10");
 
 // Extend the global scope with a few browser classes and methods
 requireCp_globals();

@@ -131,7 +131,7 @@
       // system attributes
       vmVersion: "SqueakJS 1.3.3",
       vmDate: "2025-06-03",               // Maybe replace at build time?
-      vmBuild: "cp-20260423",                 // this too?
+      vmBuild: "cp-20260507",                 // this too?
       vmPath: "unknown",                  // Replaced at runtime
       vmFile: "vm.js",
       vmMakerVersion: "[VMMakerJS-bf.17 VMMaker-bf.353]", // for Smalltalk vmVMMakerVersion
@@ -13135,7 +13135,7 @@
   sessionStorage.setItem("SERVER_URL", globalThis.location.protocol.replace("http", "ws") + "//" + globalThis.location.host + "/io");
 
   // Set environment version (monotonic increasing counter, expecting exact match on server)
-  sessionStorage.setItem("CLIENT_VERSION", "9");
+  sessionStorage.setItem("CLIENT_VERSION", "10");
 
   // Override any setting from the worker's location (query parameters)
   const searchParams = new URLSearchParams(globalThis.location.search);
