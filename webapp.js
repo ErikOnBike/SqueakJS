@@ -23,11 +23,18 @@ import "./plugins/CpSystemPlugin.js";
 import "./plugins/CpDOMPlugin.js";
 import "./cp_interpreter.js";
 
+// Set environment version (monotonic increasing counter, expecting exact match on server)
+sessionStorage.setItem("CLIENT_VERSION", "10");
+
 // Add a global unhandled exception handler.
 // Store the uncaught exception and start the Smalltalk uncaught handler.
 window.addEventListener("unhandledrejection", function(event) {
   globalThis.__cp_uncaught = { reason: event.reason, promise: event.promise, compiledCode: event.promise.__cp_compiled_code };
-  Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+  if(typeof Squeak !== 'undefined') {
+    Squeak.externalModules.CpSystemPlugin.vm.handleUncaught();
+  } else {
+    console.error(globalThis.__cp_uncaught);
+  }
 
   // Don't show default message on the console
   event.preventDefault();
